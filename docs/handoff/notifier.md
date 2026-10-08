@@ -26,13 +26,14 @@ from app.notify.history import classify_alerts, prior_alerts, commit_history
 from app.notify.report import write_outputs, failed_complex_nos
 
 failed = {f["complex_no"] for f in failures}               # 평형 하나라도 실패한 단지는 여기에 넣는다
-verdicts, gone = classify_alerts(session, verdicts, failed, run_id, dry_run)   # DB 읽기만
+targets = {e.complex_no for e in load_complexes(settings.complexes_file)}   # 이번 실행 대상 단지 전체 (실패 포함)
+verdicts, gone = classify_alerts(session, verdicts, failed, run_id, dry_run, targets)   # DB 읽기만
 prior = prior_alerts(session, [v.listing.dedup_key for v in verdicts if v.alert_kind == "PRICE_DROP"])
 run = RunResult(..., verdicts=verdicts, ...)
 context = {..., "gone": gone, "prior_alerts": prior, "failures": failures}
 paths = write_outputs(run, context, report_dir=settings.report_dir, out_dir=settings.out_dir, dry_run=dry_run)
 # ↑ 예외 없이 끝난 경우에만 ↓
-commit_history(session, run.verdicts, failed, run_id, dry_run=dry_run, now=run.started_at)
+commit_history(session, run.verdicts, failed, run_id, dry_run=dry_run, target_complex_nos=targets, now=run.started_at)
 ```
 
 - `classify_alerts`는 dry_run과 관계없이 **DB를 쓰지 않는다**. 이력 갱신은 `commit_history`만 한다.
@@ -42,8 +43,13 @@ commit_history(session, run.verdicts, failed, run_id, dry_run=dry_run, now=run.s
   - 요약 파일은 항상 `out_dir/summary.md`
 - `commit_history(..., dry_run=True)`는 DB를 바꾸지 않고 집계만 돌려준다. `session.commit()`도 부르지 않는다.
 - `commit_history`의 `now`는 시간대가 있는 datetime이어야 한다. 없으면 ValueError가 난다.
-- 시그니처: `commit_history(session, verdicts, failed_complex_nos, run_id, *, dry_run, now=None) -> dict`.
-  §10에는 `commit_history(session, ...)`로만 적혀 있어서 나머지 인자는 이렇게 정했다.
+- 시그니처는 CLAUDE.md §10을 따른다.
+  - `classify_alerts(session, verdicts, failed_complex_nos, run_id, dry_run, target_complex_nos)`
+  - `commit_history(session, verdicts, failed_complex_nos, run_id, *, dry_run, target_complex_nos, now=None) -> dict`
+  - 반환 키: NEW, PRICE_DROP, ONGOING, DEACTIVATED, RETIRED, SKIPPED_FAILED, dry_run
+- `target_complex_nos`에 없는 단지(complexes.yaml에서 뺀 단지)의 active 이력은 "내려간 매물"로 표시하지 않는다. `commit_history`가 이 이력을 `active=False`, `deactivated_run_id=run_id`로 조용히 바꾸고 `RETIRED`로 센다. 나중에 그 단지를 다시 넣고 급매가 나오면 NEW로 알린다.
+- 수집 실패 단지는 `target_complex_nos`에 없더라도 보호한다. 보호가 우선이다.
+- `target_complex_nos`에 없는 단지의 Verdict가 들어오면 ValueError를 낸다.
 
 ## context 계약 (render_report / render_summary / write_outputs)
 
@@ -55,7 +61,7 @@ commit_history(session, run.verdicts, failed, run_id, dry_run=dry_run, now=run.s
 | `gone` | 필수 | `list[dict]` | `classify_alerts`의 두 번째 반환값 |
 | `failures` | 필수 | `list[dict]` | `{"complex_no": str, "name": str?, "stage": str, "detail": str?, "area_key": float?}`. area_key가 없으면 단지 전체 실패, 있으면 그 평형만 실패. stage는 CollectorError.stage 값 |
 | `prior_alerts` | PRICE_DROP이 있으면 필수 | `dict[dedup_key, dict]` | `prior_alerts()` 결과. 없으면 KeyError |
-| `molit_candidates` | 선택 | `dict[complex_no, list[dict]]` | `find_apt_seq_candidates` 결과. dict의 `aptSeq`(또는 `apt_seq`, `molit_apt_seq`) 값을 식별자로 보여 주고, 나머지 키는 `k=v`로 표시한다 |
+| `molit_candidates` | 선택 | `dict[complex_no, list[dict]]` | `find_apt_seq_candidates` 결과. 키는 §10에 고정된 `apt_seq`(필수), `apt_nm`, `umd_nm`, `jibun`, `trade_count`, `last_contract`만 쓴다. `score`·`hints`는 표시하지 않는다 |
 | `trades` | 선택 | `dict[(complex_no, area_key), list[Trade]]` | 저층 실거래를 참고로 표시할 때 쓴다 (§4.1). 해제 거래를 빼고 가장 최근 1건을 보여 준다 |
 | `collector_warnings` | 선택 | `list[str]` | 수집기 경고 (CLAUDE.md §9). 6번 섹션에 표시된다 |
 | `complexes_file` | 선택 | `str` | 안내 문구에 쓰는 경로. 기본값은 `config/complexes.yaml` |
@@ -101,8 +107,7 @@ commit_history(session, run.verdicts, failed, run_id, dry_run=dry_run, now=run.s
 
 ## 한계 / 미해결
 
-- **설정에서 뺀 단지의 이력**: `classify_alerts` 시그니처(§10)에는 "이번 실행 대상 단지" 정보가 없다. 그래서 complexes.yaml에서 단지를 빼면 그 단지의 active 이력이 다음 실행에서 "내려간 매물(GONE)"로 1회 표시되고 비활성화된다. 오알림은 아니지만 문구가 정확하지 않다. 해결하려면 Orchestrator가 결정해야 한다. 하나는 시그니처에 `target_complex_nos`를 추가하는 방법이고, 다른 하나는 pipeline이 대상에서 빠진 단지를 `failed_complex_nos`에 넣는 방법이다 (후자는 이력이 영구히 active로 남는다).
-- `molit_candidates` dict의 키 이름은 trade-collector 구현에 맞춰 확인해야 한다. 지금은 `aptSeq`/`apt_seq`/`molit_apt_seq`를 식별자로 인식한다.
-- 렌더링 테스트 `test_pct_matches_rules_discount`는 반올림이 같은지 확인하려고 `app.domain.rules._discount_pct`(비공개)를 직접 부른다. 모듈 코드는 §10 함수만 쓴다.
+- 미해결 1(설정에서 뺀 단지)과 2(후보 키)는 CLAUDE.md §10 변경으로 해소되어 반영했다.
+- 근거별 할인율이 rules와 같은지는 `rules.judge`가 돌려준 `Verdict.discount_pct`와 비교해 확인한다 (`test_reason_pct_matches_judge_discount`). 비공개 함수는 부르지 않는다.
 - 샘플·스냅샷은 실제 `normalize.format_price`로 만들었다. 모듈이 없을 때 쓰는 스텁(`notify_sample.stub_format_price`)은 지금 쓰이지 않는다.
 - HTML은 브라우저·메일 앱에서 실제로 열어 보지 않았다. 구조 검사(인라인 스타일, 600px, 외부 리소스 없음)만 테스트한다.

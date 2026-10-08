@@ -14,7 +14,8 @@ from app.notify.history import classify_alerts, commit_history, prior_alerts
 from tests.unit.notify_sample import PREV_RUN_AT, hist, listing, new_session, verdict
 
 NOW = datetime(2026, 10, 13, 1, 0, tzinfo=UTC)
-C1, C2 = "100", "200"
+C1, C2, C3 = "100", "200", "300"
+T = {C1, C2}
 
 
 def bargain(price: int, cno: str = C1, dong: str = "101동", art: str = "a1"):
@@ -54,9 +55,9 @@ def session():
 # ---------------------------------------------------------------- 분류 표 각 행 (C6-1)
 
 def test_row1_new_when_no_history(session):
-    vs, gone = classify_alerts(session, [bargain(95000)], set(), "r2", dry_run=False)
+    vs, gone = classify_alerts(session, [bargain(95000)], set(), "r2", dry_run=False, target_complex_nos=T)
     assert vs[0].alert_kind == "NEW" and gone == []
-    stats = commit_history(session, vs, set(), "r2", dry_run=False, now=NOW)
+    stats = commit_history(session, vs, set(), "r2", dry_run=False, target_complex_nos=T, now=NOW)
     assert stats["NEW"] == 1
     r = row(session, key())
     assert (r.active, r.last_alerted_price, r.first_alerted_at, r.last_alerted_at, r.last_seen_run_id) == \
@@ -69,9 +70,9 @@ def test_row1_new_when_history_inactive_reactivates(session):
     h.deactivated_run_id = "r0"
     session.add(h)
     session.commit()
-    vs, gone = classify_alerts(session, [bargain(95000)], set(), "r2", dry_run=False)
+    vs, gone = classify_alerts(session, [bargain(95000)], set(), "r2", dry_run=False, target_complex_nos=T)
     assert vs[0].alert_kind == "NEW" and gone == []
-    commit_history(session, vs, set(), "r2", dry_run=False, now=NOW)
+    commit_history(session, vs, set(), "r2", dry_run=False, target_complex_nos=T, now=NOW)
     r = row(session, key())
     assert (r.active, r.last_alerted_price, r.deactivated_run_id, r.first_alerted_at) == (True, 95000, None, NOW)
 
@@ -79,10 +80,10 @@ def test_row1_new_when_history_inactive_reactivates(session):
 def test_row2_price_drop(session):
     session.add(hist(key(), C1, 84.97, 95000))
     session.commit()
-    vs, _ = classify_alerts(session, [bargain(94999)], set(), "r2", dry_run=False)
+    vs, _ = classify_alerts(session, [bargain(94999)], set(), "r2", dry_run=False, target_complex_nos=T)
     assert vs[0].alert_kind == "PRICE_DROP"
     assert prior_alerts(session, [key()])[key()]["last_alerted_price"] == 95000
-    commit_history(session, vs, set(), "r2", dry_run=False, now=NOW)
+    commit_history(session, vs, set(), "r2", dry_run=False, target_complex_nos=T, now=NOW)
     r = row(session, key())
     assert (r.last_alerted_price, r.last_alerted_at, r.first_alerted_at, r.active, r.last_seen_run_id) == \
         (94999, NOW, PREV_RUN_AT, True, "r2")
@@ -92,9 +93,9 @@ def test_row2_price_drop(session):
 def test_row3_ongoing_same_or_higher(session, price):
     session.add(hist(key(), C1, 84.97, 95000))
     session.commit()
-    vs, gone = classify_alerts(session, [bargain(price)], set(), "r2", dry_run=False)
+    vs, gone = classify_alerts(session, [bargain(price)], set(), "r2", dry_run=False, target_complex_nos=T)
     assert vs[0].alert_kind == "ONGOING" and gone == []
-    commit_history(session, vs, set(), "r2", dry_run=False, now=NOW)
+    commit_history(session, vs, set(), "r2", dry_run=False, target_complex_nos=T, now=NOW)
     r = row(session, key())
     # last_seen만 갱신: 알림가·알림 시각 그대로
     assert (r.last_alerted_price, r.last_alerted_at, r.active, r.last_seen_run_id) == \
@@ -104,11 +105,11 @@ def test_row3_ongoing_same_or_higher(session, price):
 def test_row4a_listing_disappeared(session):
     session.add(hist(key(), C1, 84.97, 95000))
     session.commit()
-    vs, gone = classify_alerts(session, [], set(), "r2", dry_run=False)
+    vs, gone = classify_alerts(session, [], set(), "r2", dry_run=False, target_complex_nos=T)
     assert vs == []
     assert [(g["dedup_key"], g["reason"], g["listing"], g["last_alerted_price"]) for g in gone] == \
         [(key(), "GONE", None, 95000)]
-    stats = commit_history(session, vs, set(), "r2", dry_run=False, now=NOW)
+    stats = commit_history(session, vs, set(), "r2", dry_run=False, target_complex_nos=T, now=NOW)
     assert stats["DEACTIVATED"] == 1
     r = row(session, key())
     assert (r.active, r.deactivated_run_id, r.last_alerted_price) == (False, "r2", 95000)
@@ -117,27 +118,27 @@ def test_row4a_listing_disappeared(session):
 def test_row4b_no_longer_bargain(session):
     session.add(hist(key(), C1, 84.97, 95000))
     session.commit()
-    vs, gone = classify_alerts(session, [not_bargain(99000)], set(), "r2", dry_run=False)
+    vs, gone = classify_alerts(session, [not_bargain(99000)], set(), "r2", dry_run=False, target_complex_nos=T)
     assert vs[0].alert_kind is None
     assert gone[0]["reason"] == "NOT_BARGAIN" and gone[0]["listing"].price == 99000
-    commit_history(session, vs, set(), "r2", dry_run=False, now=NOW)
+    commit_history(session, vs, set(), "r2", dry_run=False, target_complex_nos=T, now=NOW)
     assert row(session, key()).active is False
 
 
 def test_gone_shown_only_once(session):
     session.add(hist(key(), C1, 84.97, 95000))
     session.commit()
-    vs, gone = classify_alerts(session, [], set(), "r2", dry_run=False)
+    vs, gone = classify_alerts(session, [], set(), "r2", dry_run=False, target_complex_nos=T)
     assert len(gone) == 1
-    commit_history(session, vs, set(), "r2", dry_run=False, now=NOW)
-    _, gone_next = classify_alerts(session, [], set(), "r3", dry_run=False)
+    commit_history(session, vs, set(), "r2", dry_run=False, target_complex_nos=T, now=NOW)
+    _, gone_next = classify_alerts(session, [], set(), "r3", dry_run=False, target_complex_nos=T)
     assert gone_next == []
 
 
 def test_non_bargain_without_history_has_no_kind_and_no_row(session):
-    vs, gone = classify_alerts(session, [not_bargain(100000)], set(), "r2", dry_run=False)
+    vs, gone = classify_alerts(session, [not_bargain(100000)], set(), "r2", dry_run=False, target_complex_nos=T)
     assert vs[0].alert_kind is None and gone == []
-    commit_history(session, vs, set(), "r2", dry_run=False, now=NOW)
+    commit_history(session, vs, set(), "r2", dry_run=False, target_complex_nos=T, now=NOW)
     assert snapshot(session) == []
 
 
@@ -152,9 +153,9 @@ def test_failed_complex_history_untouched(session):
     session.commit()
     before = {r[0]: r for r in snapshot(session)}
     verdicts = [bargain(90000, cno=C2, dong="2동", art="b2"), bargain(80000, cno=C2, dong="3동", art="b3")]
-    vs, gone = classify_alerts(session, verdicts, {C2}, "r2", dry_run=False)
+    vs, gone = classify_alerts(session, verdicts, {C2}, "r2", dry_run=False, target_complex_nos=T)
     assert [g["dedup_key"] for g in gone] == [key(C1, "1동")]
-    stats = commit_history(session, vs, {C2}, "r2", dry_run=False, now=NOW)
+    stats = commit_history(session, vs, {C2}, "r2", dry_run=False, target_complex_nos=T, now=NOW)
     assert stats["SKIPPED_FAILED"] == 2
     after = {r[0]: r for r in snapshot(session)}
     assert after[key(C2, "1동")] == before[key(C2, "1동")]
@@ -173,11 +174,11 @@ def test_dry_run_never_changes_db(session):
     session.commit()
     before = snapshot(session)
     verdicts = [bargain(90000, dong="1동", art="x1"), bargain(90000, dong="9동", art="x9")]
-    vs, gone = classify_alerts(session, verdicts, set(), "r2", dry_run=True)
+    vs, gone = classify_alerts(session, verdicts, set(), "r2", dry_run=True, target_complex_nos=T)
     assert [v.alert_kind for v in vs] == ["PRICE_DROP", "NEW"]      # 분류는 기존 이력으로 계산
     assert [g["dedup_key"] for g in gone] == [key(C1, "2동")]
-    stats = commit_history(session, vs, set(), "r2", dry_run=True, now=NOW)
-    assert stats == {"NEW": 1, "PRICE_DROP": 1, "ONGOING": 0, "DEACTIVATED": 1,
+    stats = commit_history(session, vs, set(), "r2", dry_run=True, target_complex_nos=T, now=NOW)
+    assert stats == {"NEW": 1, "PRICE_DROP": 1, "ONGOING": 0, "DEACTIVATED": 1, "RETIRED": 0,
                      "SKIPPED_FAILED": 0, "dry_run": 1}
     session.rollback()
     assert snapshot(session) == before
@@ -188,7 +189,7 @@ def test_classify_is_read_only_even_without_dry_run(session):
     session.add(hist(key(), C1, 84.97, 95000))
     session.commit()
     before = snapshot(session)
-    classify_alerts(session, [bargain(90000, dong="9동", art="z")], set(), "r2", dry_run=False)
+    classify_alerts(session, [bargain(90000, dong="9동", art="z")], set(), "r2", dry_run=False, target_complex_nos=T)
     assert not session.new and not session.dirty
     session.rollback()
     assert snapshot(session) == before
@@ -198,26 +199,79 @@ def test_classify_is_read_only_even_without_dry_run(session):
 
 def test_duplicate_dedup_key_rejected(session):
     with pytest.raises(ValueError, match="dedup_key"):
-        classify_alerts(session, [bargain(90000, art="a"), bargain(91000, art="b")], set(), "r", dry_run=True)
+        classify_alerts(session, [bargain(90000, art="a"), bargain(91000, art="b")], set(), "r", dry_run=True, target_complex_nos=T)
 
 
 def test_classify_does_not_mutate_input(session):
     original = [bargain(90000)]
-    vs, _ = classify_alerts(session, original, set(), "r", dry_run=True)
+    vs, _ = classify_alerts(session, original, set(), "r", dry_run=True, target_complex_nos=T)
     assert original[0].alert_kind is None and vs[0].alert_kind == "NEW"
 
 
 def test_commit_requires_aware_now(session):
     with pytest.raises(ValueError):
-        commit_history(session, [bargain(90000)], set(), "r", dry_run=False, now=datetime(2026, 10, 13))
+        commit_history(session, [bargain(90000)], set(), "r", dry_run=False, target_complex_nos=T, now=datetime(2026, 10, 13))
 
 
 def test_works_on_migrated_db(tmp_db_path):
     """Alembic 스키마(실제 state/history.sqlite3와 같은 것)에서도 동작한다."""
     upgrade_db(tmp_db_path)
     s = make_session_factory(make_engine(tmp_db_path))()
-    vs, _ = classify_alerts(s, [bargain(90000)], set(), "r1", dry_run=False)
-    commit_history(s, vs, set(), "r1", dry_run=False, now=NOW)
-    vs2, _ = classify_alerts(s, [bargain(89000)], set(), "r2", dry_run=False)
+    vs, _ = classify_alerts(s, [bargain(90000)], set(), "r1", dry_run=False, target_complex_nos=T)
+    commit_history(s, vs, set(), "r1", dry_run=False, target_complex_nos=T, now=NOW)
+    vs2, _ = classify_alerts(s, [bargain(89000)], set(), "r2", dry_run=False, target_complex_nos=T)
     assert vs2[0].alert_kind == "PRICE_DROP"
     s.close()
+
+
+# ---------------------------------------------------------------- 대상에서 빠진 단지 (CLAUDE.md §10 target_complex_nos)
+
+def test_removed_complex_not_shown_as_gone_and_silently_deactivated(session):
+    session.add_all([
+        hist(key(C3, "1동"), C3, 84.97, 95000),           # complexes.yaml에서 뺀 단지
+        hist(key(C1, "1동"), C1, 84.97, 95000),           # 대상 단지, 매물 사라짐
+    ])
+    session.commit()
+    vs, gone = classify_alerts(session, [], set(), "r2", dry_run=False, target_complex_nos={C1})
+    assert [g["dedup_key"] for g in gone] == [key(C1, "1동")]       # 빠진 단지는 표시 안 함
+    stats = commit_history(session, vs, set(), "r2", dry_run=False, target_complex_nos={C1}, now=NOW)
+    assert (stats["DEACTIVATED"], stats["RETIRED"]) == (1, 1)
+    r = row(session, key(C3, "1동"))
+    assert (r.active, r.deactivated_run_id, r.last_alerted_price) == (False, "r2", 95000)
+    # 다음 실행에서도 다시 나오지 않는다
+    _, gone_next = classify_alerts(session, [], set(), "r3", dry_run=False, target_complex_nos={C1})
+    assert gone_next == []
+
+
+def test_removed_complex_readded_alerts_new_again(session):
+    session.add(hist(key(C3, "1동"), C3, 84.97, 95000))
+    session.commit()
+    commit_history(session, [], set(), "r2", dry_run=False, target_complex_nos={C1}, now=NOW)
+    vs, _ = classify_alerts(session, [bargain(95000, cno=C3, dong="1동")], set(), "r3", dry_run=False,
+                            target_complex_nos={C1, C3})
+    assert vs[0].alert_kind == "NEW"
+
+
+def test_removed_complex_dry_run_unchanged(session):
+    session.add(hist(key(C3, "1동"), C3, 84.97, 95000))
+    session.commit()
+    before = snapshot(session)
+    stats = commit_history(session, [], set(), "r2", dry_run=True, target_complex_nos={C1}, now=NOW)
+    assert stats["RETIRED"] == 1
+    session.rollback()
+    assert snapshot(session) == before
+
+
+def test_failed_complex_protected_even_if_not_in_targets(session):
+    session.add(hist(key(C2, "1동"), C2, 84.97, 95000))
+    session.commit()
+    before = snapshot(session)
+    _, gone = classify_alerts(session, [], {C2}, "r2", dry_run=False, target_complex_nos={C1})
+    assert gone == []
+    commit_history(session, [], {C2}, "r2", dry_run=False, target_complex_nos={C1}, now=NOW)
+    assert snapshot(session) == before
+
+
+def test_verdict_outside_targets_rejected(session):
+    with pytest.raises(ValueError, match="target_complex_nos"):
+        classify_alerts(session, [bargain(90000, cno=C3)], set(), "r", dry_run=True, target_complex_nos={C1})

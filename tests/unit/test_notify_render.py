@@ -92,7 +92,7 @@ def test_report_shows_flags(sample):
     run, ctx, _ = sample
     html = render_report(run, ctx)
     for word in ["실거래 부족", "층 미상", "수집 실패", "실거래 매칭 확인 필요", "가격 인하 (이전가 → 현재가)",
-                 "신규", "지속 중", "11650-0101", "molit_apt_seq", "config/complexes.yaml",
+                 "신규", "지속 중", "11650-0101", "molit_apt_seq", "동아 (잠원동 65) · 거래 14건 · 최근 계약 2026-09-03", "config/complexes.yaml",
                  "저층 실거래(참고)", "표본 부족", "헬리오시티"]:
         assert word in html, word
     # 수집 실패 배너가 요약 박스보다 먼저 (맨 위)
@@ -247,7 +247,7 @@ def run_like_pipeline(run, ctx, session, tmp_path):
     """pipeline이 지킬 순서: 파일 쓰기 성공 → commit_history."""
     write_outputs(run, ctx, report_dir=tmp_path / "reports", out_dir=tmp_path / "out", dry_run=False)
     return commit_history(session, run.verdicts, {f["complex_no"] for f in ctx["failures"]}, run.run_id,
-                          dry_run=False, now=S.STARTED_AT)
+                          dry_run=False, target_complex_nos=S.TARGETS, now=S.STARTED_AT)
 
 
 def test_history_not_committed_when_writing_fails(sample, tmp_path, monkeypatch):
@@ -277,7 +277,8 @@ def test_no_file_written_when_summary_render_fails(sample, tmp_path, monkeypatch
 def test_history_committed_after_successful_write(sample, tmp_path):
     run, ctx, session = sample
     stats = run_like_pipeline(run, ctx, session, tmp_path)
-    assert stats == {"NEW": 2, "PRICE_DROP": 1, "ONGOING": 1, "DEACTIVATED": 2, "SKIPPED_FAILED": 0, "dry_run": 0}
+    assert stats == {"NEW": 2, "PRICE_DROP": 1, "ONGOING": 1, "DEACTIVATED": 2, "RETIRED": 0,
+                     "SKIPPED_FAILED": 0, "dry_run": 0}
     h = _history(session)
     assert h[f"{S.HELIO}|84.95|301동|20/35|남향"][1] is True   # 실패 단지 이력 그대로
 
@@ -292,15 +293,34 @@ def _history(session) -> dict:
             for r in session.scalars(select(AlertHistoryRow))}
 
 
-@pytest.mark.parametrize("price,base", [(95000, 100000), (93575, 98500), (238000, 270000),
-                                        (99950, 100000), (1, 3), (2, 3), (90005, 100000), (85, 200)])
-def test_pct_matches_rules_discount(price, base):
-    """표시 할인율이 rules가 넣는 Verdict.discount_pct와 같은 반올림을 쓴다 (CLAUDE.md §9 rules ④)."""
-    from app.domain.rules import _discount_pct
+@pytest.mark.parametrize("prices,trade_prices", [
+    ([95000, 100000, 99000], [100000, 98000, 102000]),   # R01 경계 95%
+    ([93575], [100000, 97001]),                           # R18 중앙값 98500
+    ([90005, 100000], [100000]),                          # x.x95 → 반올림 경계
+    ([94950, 100000], []),                                # 매물 조건만, 5.05 → 5.1 (HALF_UP)
+    ([94950, 99999], []),
+    ([85, 200], [200]),
+])
+def test_reason_pct_matches_judge_discount(prices, trade_prices):
+    """근거별 할인율 표시가 judge가 준 Verdict.discount_pct와 같은 반올림을 쓴다 (CLAUDE.md §9 rules ④).
 
+    discount_pct = 근거 기준가 중 큰 할인율이므로, 근거 문구의 할인율 중 최댓값과 같아야 한다.
+    """
+    from datetime import date
+
+    from app.domain.models import Trade
+    from app.domain.rules import judge
     from app.notify.report import pct_below
 
-    assert pct_below(price, base) == _discount_pct(price, [base])
+    as_of = date(2026, 10, 13)
+    listings = [S.listing("1", 84.97, f"{i}동", "10/20", "NORMAL", p, f"a{i}") for i, p in enumerate(prices)]
+    trades = [Trade("1", 84.97, 84.97, 10, "NORMAL", p, date(2026, 9, 1 + i), False, "중개거래", "MOLIT")
+              for i, p in enumerate(trade_prices)]
+    bargains = [v for v in judge(listings, trades, as_of) if v.is_bargain]
+    assert bargains, "급매가 하나는 나와야 비교가 된다"
+    for v in bargains:
+        bases = [b for r, b in (("TRADE", v.trade_base), ("LISTING", v.listing_base)) if r in v.reasons]
+        assert max(pct_below(v.listing.price, b) for b in bases) == v.discount_pct
 
 
 def test_collector_warnings_shown(sample):

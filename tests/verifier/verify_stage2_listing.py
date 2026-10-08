@@ -60,9 +60,12 @@ for s in ["가격문의","","억","12.5억","0","-5000","12억 -5", "1억2천"]:
 check("format_price(125000)", format_price(125000), "12억 5,000")
 check("format_price(90000)", format_price(90000), "9억")
 check("format_price(8500)", format_price(8500), "8,500")
-# 관찰용 (명세 밖): 억 뒤 숫자가 10000 이상
-try: print("INFO parse_price('10억 15000') ->", parse_price("10억 15000"))
-except ValueError as e: print("INFO parse_price('10억 15000') -> ValueError")
+# §9 명세 확정(매물) ①: 억 뒤 숫자 >= 10000 -> ValueError
+for s_ in ["10억 15000", "10억 10,000", "1억10000", "0억 10000", "10억 010000"]:
+    raises(f"parse_price({s_!r}) ValueError (rest>=10000)", lambda s_=s_: parse_price(s_))
+check("parse_price('10억 9,999') boundary", parse_price("10억 9,999"), 109999)
+check("parse_price('10억 09999')", parse_price("10억 09999"), 109999)
+check("parse_price('15000') manwon-only still ok", parse_price("15000"), 15000)
 
 print("== dedup D01~D06")
 def L(no, price, dong="101동", floor="10/25", d="남향", ak=84.97, conf=date(2026,10,1), cno="3009"):
@@ -174,6 +177,34 @@ for st in ["blocked","schema_changed","network","molit_api","molit_auth","comple
     CollectorError(st)
 raises("CollectorError('timeout') ValueError", lambda: CollectorError("timeout"))
 e = CollectorError("network", complex_no=None); check("str no complex", str(e), "network")
+
+# §9 명세 확정(매물) ③: 미매칭 처리
+def run_arts(arts):
+    def hh(r):
+        if "articles" in r.url.path: return httpx.Response(200, json={"isMoreData":False,"articleList":arts})
+        return httpx.Response(200, json=cx_json)
+    c = client_for(hh, []); cx, types = nl.fetch_complex(c, "99901")
+    try: return c, nl.fetch_listings(c, cx, types), None
+    except CollectorError as e: return c, None, e
+def A(no, name, a1, a2): return {"articleNo":no,"areaName":name,"area1":a1,"area2":a2,"dealOrWarrantPrc":"10억","floorInfo":"5/25"}
+c, r, e = run_arts([A("1","999X",100,70)])
+check("1건, 전부 미매칭 -> schema_changed", e and e.stage, "schema_changed")
+c, r, e = run_arts([A("1","145",145,114.8), A("2","999X",100,70)])
+check("초과1 + 미매칭1, 매칭0 -> schema_changed", e and e.stage, "schema_changed")
+c, r, e = run_arts([A("1","145",145,114.8), A("2","145",150,120)])
+check("초과만 2건 -> [] 경고 없음", (r, c.warnings), ([], []))
+c, r, e = run_arts([])
+check("0건 -> [] 경고 없음", (r, c.warnings, e), ([], [], None))
+c, r, e = run_arts([A("1","112A",112,84), A("2","999X",100,70)])
+check("1/2 미매칭 -> 50% 경고", (len(r), any("50% 이상" in w for w in c.warnings)), (1, True))
+c, r, e = run_arts([A("1","112A",112,84), A("2","113B",113,84), A("3","999X",100,70)])
+check("1/3 미매칭 -> 건수 경고만", (len(r), any("50% 이상" in w for w in c.warnings), len(c.warnings)), (2, False, 1))
+c, r, e = run_arts([A("1","112A",112,84), A("2","999X",100,70), A("3","145",145,114.8), A("4","145",145,114.8)])
+check("1매칭+1미매칭+2초과 -> 분모에 초과 미포함, 50% 경고", (len(r), any("1/2" in w and "50% 이상" in w for w in c.warnings)), (1, True))
+c, r, e = run_arts([A("1","112A",112,84), A("2","112A",112,84), A("3","999X",100,70), A("4","999X",None,None)])
+check("2매칭+2미매칭 -> 정확히 50% 경고", any("2/4" in w and "50% 이상" in w for w in c.warnings), True)
+c, r, e = run_arts([A("1","112A",112,84), A("2","999X",100,70), {"articleNo":"9","dealOrWarrantPrc":"10억"}])
+check("면적 필드 전무 매물 -> schema_changed", e and e.stage, "schema_changed")
 
 print("\nFAILS:", fails)
 sys.exit(1 if fails else 0)
