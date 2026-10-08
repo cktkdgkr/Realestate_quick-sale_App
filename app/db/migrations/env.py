@@ -1,11 +1,15 @@
 """Alembic 환경. URL은 Config의 sqlalchemy.url, 없으면 app.config 설정의 DB_PATH."""
 
+from logging.config import fileConfig
+
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.db.models import Base
 
 config = context.config
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
 target_metadata = Base.metadata
 
 

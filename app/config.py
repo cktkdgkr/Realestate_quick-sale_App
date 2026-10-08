@@ -13,7 +13,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
 import yaml
 from dotenv import dotenv_values
@@ -24,7 +24,10 @@ DEFAULT_DB_PATH = "state/history.sqlite3"
 DEFAULT_REPORT_DIR = "reports"
 DEFAULT_OUT_DIR = "out"
 DEFAULT_COMPLEXES_FILE = "config/complexes.yaml"
-DEFAULT_TZ = "Asia/Seoul"
+# 업무 시간대는 코드 상수로 고정한다 (CLAUDE.md §9). 설정 키·OS 환경변수 TZ로 바꿀 수 없다.
+# 기준일 as_of, 24개월 창, 리포트 파일명은 모두 이 시간대의 날짜다.
+BUSINESS_TZ_NAME = "Asia/Seoul"
+BUSINESS_TZ = ZoneInfo(BUSINESS_TZ_NAME)
 
 _TRUE = {"1", "true", "yes", "y", "on"}
 _FALSE = {"0", "false", "no", "n", "off", ""}
@@ -42,15 +45,19 @@ class ConfigError(ValueError):
 class Settings:
     molit_api_key: str | None = field(repr=False)
     dry_run: bool
-    tz: str
     db_path: Path
     report_dir: Path
     out_dir: Path
     complexes_file: Path
 
     @property
+    def tz(self) -> str:
+        """업무 시간대 이름. 항상 Asia/Seoul (설정으로 바꿀 수 없음)."""
+        return BUSINESS_TZ_NAME
+
+    @property
     def zoneinfo(self) -> ZoneInfo:
-        return ZoneInfo(self.tz)
+        return BUSINESS_TZ
 
     def require_molit_api_key(self) -> str:
         if not self.molit_api_key:
@@ -102,17 +109,10 @@ def load_settings(
         v = merged.get(key)
         return default if v is None or v.strip() == "" else v.strip()
 
-    tz = get("TZ", DEFAULT_TZ)
-    try:
-        ZoneInfo(tz)
-    except (ZoneInfoNotFoundError, ValueError) as e:
-        raise ConfigError(f"TZ 값이 올바른 시간대가 아닙니다: {tz!r}") from e
-
     api_key = merged.get("MOLIT_API_KEY")
     return Settings(
         molit_api_key=api_key.strip() if api_key and api_key.strip() else None,
         dry_run=_parse_bool("DRY_RUN", merged.get("DRY_RUN", "false")),
-        tz=tz,
         db_path=_resolve_path(get("DB_PATH", DEFAULT_DB_PATH), root),
         report_dir=_resolve_path(get("REPORT_DIR", DEFAULT_REPORT_DIR), root),
         out_dir=_resolve_path(get("OUT_DIR", DEFAULT_OUT_DIR), root),

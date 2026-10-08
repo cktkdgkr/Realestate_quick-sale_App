@@ -16,14 +16,14 @@
 | `app/pipeline.py` | 2단계용 자리. 지금 실행하면 exit 2로 **실패**한다 (아무것도 안 하고 성공하면 "급매 없음"으로 오인될 수 있어서) |
 | 타 agent 모듈 | `collectors/*`, `domain/normalize.py`, `domain/dedup.py`, `domain/rules.py`, `notify/report.py`, `notify/summary.py`, `notify/history.py`: docstring 한 줄만. `notify/templates/`는 `.gitkeep`만 |
 | `docs/RUNBOOK.md`, `USER_GUIDE.md`, `ROUTINE.md` | §6 구조용 자리 (2단계에서 작성한다고 명시) |
-| `.env.example` | MOLIT_API_KEY(빈 값), DRY_RUN, TZ=Asia/Seoul, DB_PATH, REPORT_DIR, OUT_DIR, COMPLEXES_FILE |
+| `.env.example` | MOLIT_API_KEY(빈 값), DRY_RUN, DB_PATH, REPORT_DIR, OUT_DIR, COMPLEXES_FILE. TZ 키 없음 (업무 시간대는 코드 상수) |
 | `tests/conftest.py` | 모든 테스트에서 AF_INET/AF_INET6 소켓 접속 차단 (autouse). `tmp_db_path`, `fixtures_dir` fixture |
 | `tests/unit/`, `tests/integration/` | models(§5 일치), config, 디렉터리 구조(§6), 네트워크 차단, 마이그레이션·DB 왕복 테스트 |
 
 ### 사용법
 ```
 python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest -q                 # 71 passed
+.venv/bin/pytest -q                 # 74 passed
 .venv/bin/python -m app.db.migrate  # 설정의 DB_PATH에 마이그레이션 적용
 .venv/bin/alembic upgrade head      # 같은 동작 (CLI)
 ```
@@ -37,13 +37,14 @@ python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 - `verdicts`: listing_snapshot_id(FK, 유니크) + dedup_key + §5 Verdict의 나머지 필드.
 - `alert_history`(dedup_key PK): complex_no, area_key, first_alerted_at, last_alerted_at, last_alerted_price, last_seen_run_id, active, deactivated_run_id.
 
-## 가정한 것 (Orchestrator 확인 필요하면 알려 달라)
+## 가정한 것 / 확정된 것
 1. **시각 저장**: 모든 DB 시각 컬럼은 `UTCDateTime` — 시간대 있는 datetime만 받고 UTC로 저장, 읽을 때 UTC aware로 반환. naive datetime은 오류. `RunResult.started_at`은 파이프라인에서 Asia/Seoul aware로 만들 것을 전제.
-2. **DRY_RUN 의미**: 텔레그램·이메일이 없어졌으므로 "재알림 이력(alert_history)을 갱신하지 않고 리포트·요약만 만든다"로 정의해 `.env.example`에 적었다. 2단계 pipeline에서 이대로 구현할 예정.
+2. **DRY_RUN 의미 (확정, CLAUDE.md §9)**: `DRY_RUN=true`이면 alert_history를 갱신하지 않고 reports 브랜치에도 올리지 않는다. 리포트·요약은 `out/`에만 쓴다. NEW/PRICE_DROP/ONGOING 분류는 기존 이력을 읽기 전용으로 써서 계산한다. 2단계 pipeline에서 이대로 구현한다.
 3. **alert_history 상태 표현**: notify 스킬 §2의 `active` 불리언을 따르고, "내려간 매물 1회 표시"를 위해 `deactivated_run_id`(비활성화된 실행)를 추가했다. 이 열 의미를 알림·리포트 agent가 확인해야 한다. 필요하면 마이그레이션 0002로 조정한다.
 4. **complexes.yaml 형식**: 최상위 `complexes:` 목록. 항목은 숫자, URL 문자열, 또는 `{complex_no|url, name, molit_apt_seq}` 맵. 알 수 없는 키·중복·complex_no/url 불일치·빈 목록은 `ConfigError` (조용히 건너뛰지 않음). `molit_apt_seq`를 yaml에 적을 수 있게 한 것은 "실거래 매칭 확인 필요"를 사용자가 해소할 수단이 필요해서다.
 5. **경로**: 상대 경로는 저장소 루트 기준. OUT_DIR(기본 `out`, §1.1의 `out/summary.md`)와 COMPLEXES_FILE을 설정 키로 추가했다.
-6. **`.gitignore` 의 state/·reports/**: 코드 브랜치에 로컬 DB·리포트가 실수로 커밋되지 않도록 `/state/`, `/reports/`를 ignore에 넣었다. `reports` 브랜치에 커밋할 때는 Routine 절차에서 `git add -f state/history.sqlite3 reports/` 로 강제 추가한다 (2단계 docs/ROUTINE.md에 명시 예정). `out/`은 원래부터 ignore (Routine 완료 알림으로만 전달). `.env`는 ignore 확인함.
+6. **reports 브랜치 운영 (확정, CLAUDE.md §9)**: `reports`는 코드와 무관한 orphan 브랜치다. 코드 브랜치에서는 `.gitignore`로 `/state/`, `/reports/`, `out/`을 제외한다. Routine 실행 때는 `git worktree`로 reports 브랜치를 따로 열어 `state/history.sqlite3`를 읽고, 실행 후 리포트와 DB를 그 브랜치에 커밋·푸시한다. 그래서 DB_PATH·REPORT_DIR이 worktree 경로를 가리키게 설정한다. 구체적인 절차는 2단계에서 docs/ROUTINE.md에 적는다. `.env`가 ignore되는 것도 확인했다.
+8. **업무 시간대 (확정, CLAUDE.md §9)**: `app/config.py`의 상수 `BUSINESS_TZ = ZoneInfo("Asia/Seoul")`로 고정했다. `Settings.tz`와 `Settings.zoneinfo`는 이 상수를 돌려주는 읽기 전용 속성이고, `.env`나 OS 환경변수 `TZ`는 무시한다. 반려 R1을 반영한 것이며, `environ={"TZ":"UTC"}`에서도 Asia/Seoul이 되는지와 08:00 KST의 기준일이 KST 날짜인지를 테스트한다.
 7. `discount_pct`는 §5가 float이므로 Float 컬럼. 판정 비교에는 쓰지 않는 표시용이다. 가격 컬럼은 전부 Integer.
 
 ## 한계 / 미해결
@@ -52,6 +53,6 @@ python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 - `tests/fixtures/`는 비어 있다 (수집 agent들이 채운다).
 
 ## 질문 (Orchestrator)
-1. 위 가정 2(DRY_RUN = 이력 미갱신)로 확정해도 되는가?
-2. 위 가정 6(코드 브랜치에서 state/·reports/ ignore, reports 브랜치에서는 `git add -f`)으로 가도 되는가? 대안은 reports 브랜치를 코드와 무관한 orphan 브랜치로 두고 산출물만 담는 방식이다.
-3. §5 스키마 변경 요청은 없다.
+- 이전 질문 1(DRY_RUN 의미)과 2(reports 브랜치 운영)는 CLAUDE.md §9에 확정되어 해소됐다.
+- §5 스키마 변경 요청은 없다.
+- 남은 확인 사항: `alert_history.deactivated_run_id`의 의미(가정 3)는 알림·리포트 agent가 확인해야 한다.

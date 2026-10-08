@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import UTC, date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -36,12 +38,24 @@ def test_env_file_and_environ_precedence(tmp_path: Path) -> None:
     assert s.db_path == tmp_path / "x" / "y.sqlite3"
 
 
+@pytest.mark.parametrize("tz", ["UTC", "America/New_York", "Mars/Base", ""])
+def test_business_timezone_fixed_regardless_of_os_tz(tmp_path: Path, tz: str) -> None:
+    env = tmp_path / ".env"
+    env.write_text(f"TZ={tz}\n", encoding="utf-8")
+    s = load_settings(env_file=env, environ={"TZ": tz}, root=tmp_path)
+    assert s.tz == "Asia/Seoul"
+    assert s.zoneinfo == ZoneInfo("Asia/Seoul")
+    # 08:00 KST (= 전날 23:00 UTC)에도 기준일은 KST 날짜
+    morning = datetime(2026, 10, 12, 23, 0, tzinfo=UTC)
+    assert morning.astimezone(s.zoneinfo).date() == date(2026, 10, 13)
+
+
 def test_secret_not_in_repr(tmp_path: Path) -> None:
     s = load_settings(env_file=tmp_path / "none", environ={"MOLIT_API_KEY": "SECRET-VALUE-123"}, root=tmp_path)
     assert "SECRET-VALUE-123" not in repr(s)
 
 
-@pytest.mark.parametrize("bad", [{"DRY_RUN": "maybe"}, {"TZ": "Mars/Base"}])
+@pytest.mark.parametrize("bad", [{"DRY_RUN": "maybe"}])
 def test_invalid_values_raise(tmp_path: Path, bad: dict[str, str]) -> None:
     with pytest.raises(ConfigError):
         load_settings(env_file=tmp_path / "none", environ=bad, root=tmp_path)
@@ -54,9 +68,9 @@ def test_env_example_lists_required_keys_without_values() -> None:
         if line.strip() and not line.lstrip().startswith("#"):
             k, _, v = line.partition("=")
             keys[k.strip()] = v.strip()
-    assert {"MOLIT_API_KEY", "DRY_RUN", "TZ", "DB_PATH", "REPORT_DIR"} <= set(keys)
+    assert {"MOLIT_API_KEY", "DRY_RUN", "DB_PATH", "REPORT_DIR", "OUT_DIR", "COMPLEXES_FILE"} <= set(keys)
     assert keys["MOLIT_API_KEY"] == ""
-    assert keys["TZ"] == "Asia/Seoul"
+    assert "TZ" not in keys  # 업무 시간대는 코드 상수 (CLAUDE.md §9)
     for banned in ("TELEGRAM", "SMTP", "EMAIL", "WEB_"):
         assert not any(k.startswith(banned) for k in keys)
 
