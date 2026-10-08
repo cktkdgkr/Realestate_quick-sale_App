@@ -1,0 +1,3 @@
+# Claude Routine 설정과 reports 브랜치 운영
+
+> 2단계에서 작성 예정 (웹·인프라 agent). 아직 내용 없음.

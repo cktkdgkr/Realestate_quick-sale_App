@@ -4,3 +4,9 @@ __pycache__/
 .venv/
 data/
 out/
+*.egg-info/
+.pytest_cache/
+*.sqlite3-journal
+# 실행 산출물: 코드 브랜치에는 커밋하지 않는다. reports 브랜치에만 `git add -f`로 커밋 (docs/ROUTINE.md, 2단계).
+/state/
+/reports/
