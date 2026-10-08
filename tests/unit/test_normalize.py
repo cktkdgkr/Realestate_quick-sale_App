@@ -138,6 +138,7 @@ def test_match_area(exclusive, keys, expected):
         ("8,500", 8500),
         (" 125,000 ", 125000),
         ("10억 500", 100500),
+        ("10억 9,999", 109999),  # '억' 뒤 상한 경계 (10000 미만은 정상)
     ],
 )
 def test_parse_price(s, expected):
@@ -145,7 +146,8 @@ def test_parse_price(s, expected):
     assert got == expected and isinstance(got, int)
 
 
-@pytest.mark.parametrize("s", ["가격문의", "", "억", "12.5억", "0", "12억 5천", None])
+@pytest.mark.parametrize("s", ["가격문의", "", "억", "12.5억", "0", "12억 5천", None,
+                               "10억 15000", "10억15,000", "1억 10000"])
 def test_parse_price_invalid(s):
     with pytest.raises(ValueError):
         parse_price(s)

@@ -348,3 +348,46 @@ def test_default_client_without_network_fails_loudly():
         assert ei.value.stage == "network"
     finally:
         client.close()
+
+
+# ---------------------------------------------------------------- 미매칭 (CLAUDE.md §9 명세 확정(매물) ③)
+def _art(no, area_name, a1, a2, price="10억"):
+    return {"articleNo": no, "areaName": area_name, "area1": a1, "area2": a2, "floorInfo": "5/25",
+            "dealOrWarrantPrc": price, "buildingName": "101동", "direction": "남향",
+            "articleConfirmYmd": "20261005"}
+
+
+def _run_with_articles(arts):
+    page = {"_meta": {"synthetic": True}, "isMoreData": False, "articleList": arts}
+    routes = {COMPLEX_PATH: json_resp(load("complex_20261008.json")), ART_PATH: json_resp(page)}
+    client, _, _ = make_client(routes)
+    cx, types = fetch_complex(client, CNO)
+    return client, (lambda: fetch_listings(client, cx, types))
+
+
+def test_all_listings_unmatched_is_schema_changed():
+    client, run = _run_with_articles([_art("1", "999X", 100, 70), _art("2", None, None, 33.3)])
+    with pytest.raises(CollectorError) as ei:
+        run()
+    assert ei.value.stage == "schema_changed" and ei.value.complex_no == CNO
+
+
+def test_unmatched_half_or_more_warns():
+    client, run = _run_with_articles([_art("1", "112A", 112, 84), _art("2", "999X", 100, 70)])
+    assert len(run()) == 1
+    assert any("50% 이상" in w and "1/2" in w for w in client.warnings)
+
+
+def test_unmatched_below_half_warns_count_only():
+    client, run = _run_with_articles([_art("1", "112A", 112, 84), _art("2", "113B", 113, 84),
+                                      _art("3", "999X", 100, 70)])
+    assert len(run()) == 2
+    assert any("1건 제외" in w for w in client.warnings)
+    assert not any("50% 이상" in w for w in client.warnings)
+
+
+def test_only_non_target_listings_is_ok_empty():
+    """공급 119㎡ 초과로 대상 외가 확정된 매물만 있으면 미매칭이 아니라 0건 (정상)."""
+    client, run = _run_with_articles([_art("1", "145", 145, 114, "18억")])
+    assert run() == []
+    assert client.warnings == []

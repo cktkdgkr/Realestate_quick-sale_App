@@ -63,7 +63,6 @@ log = logging.getLogger("app.pipeline")
 EXIT_CODES = {"OK": 0, "PARTIAL": 1, "FAILED": 2}
 STALE_LOCK_AFTER = timedelta(hours=2)
 SUMMARY_FILE = "summary.md"
-OUT_REPORT_FILE = "report.html"
 
 
 # ---------------------------------------------------------------------------

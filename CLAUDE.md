@@ -206,9 +206,13 @@ area_summary(listings: list[Listing], trades: list[Trade], as_of: date) -> dict
 
 # app/notify/history.py  (소유: notifier)
 classify_alerts(session, verdicts: list[Verdict], failed_complex_nos: set[str], run_id: str,
-                dry_run: bool) -> tuple[list[Verdict], list[dict]]
-    # alert_kind를 채운 Verdict 목록, 그리고 "지난주 급매 중 내려간 매물" 목록. dry_run이면 DB를 바꾸지 않는다
-commit_history(session, ...)                         # 리포트·요약 파일 쓰기가 성공한 뒤에만 호출
+                dry_run: bool, target_complex_nos: set[str]) -> tuple[list[Verdict], list[dict]]
+    # alert_kind를 채운 Verdict 목록과 "지난주 급매 중 내려간 매물" 목록을 돌려준다. DB는 읽기만 한다
+    # target_complex_nos: 이번 실행 대상 단지. 대상이 아닌 단지(complexes.yaml에서 빠진 단지)의 이력은 "내려간 매물"로 표시하지 않는다
+commit_history(session, verdicts, failed_complex_nos, run_id, *, dry_run, target_complex_nos, now=None) -> dict
+    # 리포트·요약 파일 쓰기가 성공한 뒤에만 호출한다. 대상에서 빠진 단지의 active 이력은 조용히 비활성화한다
+prior_alerts(session, keys) -> dict                  # 가격 인하 이전가. commit 전에 호출
+# molit 후보 dict 키(find_apt_seq_candidates 기준): apt_seq, apt_nm, umd_nm, jibun, trade_count, last_contract
 
 # app/notify/report.py, app/notify/summary.py  (소유: notifier)
 render_report(run: RunResult, context: dict) -> str  # 단일 HTML (인라인 스타일)
@@ -250,4 +254,5 @@ main(argv) -> int     # python -m app.pipeline --once [--dry-run]. 종료 코드
 | 2026-10-08 | 명세 확정(§3.2 보완): 층 표기 끝의 `층`은 떼고 해석한다(`"3층"`→3→NORMAL, `"저층"`→저→LOW, `"고층/20"`→고→NORMAL). 이 밖의 텍스트(`"옥탑"` 등)는 지금처럼 UNKNOWN이다 | listing-collector 가정 4 해소 |
 | 2026-10-08 | 명세 확정: 수집기 경고(평형 미매칭 매물 수, 매물 수 급감 등)는 RunResult 스키마를 바꾸지 않고 리포트 context의 `collector_warnings`로 전달한다. "지난 실행 대비 매물 수 80% 이상 급감" 경고는 pipeline이 `runs`·`listings_snapshot` 기준으로 계산한다 | listing-collector 미해결 사항 해소 |
 | 2026-10-08 | 명세 확정(매물): ① `parse_price`에서 "억" 뒤 숫자가 10000 이상이면 ValueError("10억 15000"은 잘못된 표기). ② `dedup`은 수집 원본에 **1회만** 적용한다(멱등 아님, pipeline 계약). ③ 매물이 1건 이상 있는데 전부 평형에 매칭되지 않으면 `CollectorError("schema_changed")`. 미매칭이 50% 이상이면 경고를 남긴다. ④ 전용면적이 같은 평형 타입이 중복되는 경우의 처리는 4단계 실제 응답으로 다시 확인한다 | 매물 모듈 검증 모호점 해소 |
+| 2026-10-08 | §10 notify 계약 변경: classify_alerts·commit_history에 `target_complex_nos`를 추가하고, prior_alerts를 명시한다. molit 후보 dict 키를 고정한다 | notifier 미해결 1·2 해소. complexes.yaml에서 뺀 단지가 "내려간 매물"로 잘못 표시되는 것을 막는다 |
 | 2026-10-08 | 통합 리허설 단지 확정: 잠원동아(complex_no 3009), 잠실엘스(complex_no 22627) | 사용자 답변 |

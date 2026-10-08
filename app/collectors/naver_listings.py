@@ -323,8 +323,19 @@ def fetch_listings(client: NaverClient, complex: Complex, area_types: list[AreaT
             break
         page += 1
 
+    # CLAUDE.md §9 명세 확정(매물) ③. 분모는 "평형 매칭" 또는 "평형 미특정"이 된 매물이다.
+    # area1(공급) > 119.0으로 대상 외가 확정된 매물은 미매칭으로 세지 않는다.
+    determinable = len(listings) + unmatched
+    if unmatched and not listings:
+        raise CollectorError(
+            "schema_changed",
+            f"매물 {unmatched}건이 모두 평형에 매칭되지 않음 (면적·평형명 필드 구조 변경 의심)",
+            complex_no,
+        )
     if unmatched:
         msg = f"[{complex_no}] 평형을 특정하지 못한 매물 {unmatched}건 제외 (공급 119㎡ 이하 추정)"
+        if unmatched * 2 >= determinable:
+            msg += f" — 미매칭 비율 {unmatched}/{determinable}건이 50% 이상, 구조 변경 의심"
         logger.warning(msg)
         client.warnings.append(msg)
     logger.info("[%s] 매매 매물 %d건 수집 (%d페이지)", complex_no, len(listings), page)

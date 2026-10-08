@@ -72,7 +72,7 @@ REAL_PIPELINE_DRIVER = textwrap.dedent(
         return verdicts, [{"prev_runs": prev}]
 
     def render_summary(run, ctx):
-        return f"[{run.status}] prev_runs={ctx['dropped'][0]['prev_runs']} dry={ctx['dry_run']}\\n"
+        return f"[{run.status}] prev_runs={ctx['gone'][0]['prev_runs']} dry={ctx['dry_run']}\\n"
 
     for mod, name, fn in [
         (naver_listings, "NaverClient", C), (molit_trades, "MolitClient", C),
@@ -83,7 +83,7 @@ REAL_PIPELINE_DRIVER = textwrap.dedent(
         (dedup, "dedup", list),
         (rules, "judge", lambda ls, ts, d: [Verdict(l, True, ["LISTING"], None, 95000, 5.3, False, None) for l in ls]),
         (rules, "area_summary", lambda *a: {}),
-        (history, "classify_alerts", classify), (history, "commit_history", lambda s, **k: None),
+        (history, "classify_alerts", classify), (history, "commit_history", lambda s, *a, **k: s.commit()),
         (report, "render_report", lambda run, ctx: "<html>" + run.status + "</html>"),
         (summary, "render_summary", render_summary),
     ]:

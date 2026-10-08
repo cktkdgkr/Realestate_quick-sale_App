@@ -1,6 +1,10 @@
 """매물 중복 묶기 (CLAUDE.md §3.4, .claude/skills/listing-dedup). 소유: listing-collector.
 
 dedup_key 형식은 재알림 이력(alert_history)의 키이므로 바꾸지 않는다.
+
+계약 (CLAUDE.md §9 명세 확정(매물) ②): dedup은 수집 원본(fetch_listings 결과)에 **1회만** 적용한다.
+멱등이 아니다. 이미 묶인 대표 매물 목록에 다시 적용하면 realtor_count가 그룹 크기(대표 1건씩 → 1)로
+덮어써지고 alt_prices가 사라진다. pipeline은 원본에 한 번만 호출해야 한다.
 """
 
 from __future__ import annotations

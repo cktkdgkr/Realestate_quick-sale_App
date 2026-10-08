@@ -96,7 +96,10 @@ def parse_price(s: str) -> int:
     t = re.sub(r"[\s,]", "", s)
     m = _PRICE_EOK_RE.match(t)
     if m:
-        value = int(m.group(1)) * 10000 + (int(m.group(2)) if m.group(2) else 0)
+        rest = int(m.group(2)) if m.group(2) else 0
+        if rest >= 10000:  # CLAUDE.md §9 명세 확정(매물) ①: "10억 15000"은 잘못된 표기
+            raise ValueError(f"'억' 뒤 숫자가 10000 이상: {s!r}")
+        value = int(m.group(1)) * 10000 + rest
     elif _PRICE_MANWON_RE.match(t):
         value = int(t)
     else:
