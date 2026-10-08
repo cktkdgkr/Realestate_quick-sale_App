@@ -179,4 +179,6 @@ docs/   RUNBOOK.md, USER_GUIDE.md, ROUTINE.md (Routine 설정·reports 브랜치
 | (최초) | 명세 확정 | 사용자 인터뷰 결과 반영 |
 | 2026-10-08 | §8에 "과금 관련 일체 금지" 추가 | 사용자 요청: 모든 agent(Orchestrator 포함)가 과금 관련 내용을 건드리거나 사용하지 않도록 |
 | 2026-10-08 | §1.1 신설, §1·§2·§4.4·§6·§7 수정: 텔레그램·이메일·웹 서버·Docker·APScheduler 제거 → Claude Routine 실행 + HTML 리포트 파일 + `reports` 브랜치 보존 + `config/complexes.yaml` | 사용자 답변: 서버 없음, 실행은 Claude Routine, 리포트는 HTML 파일, 텔레그램 없음. 스킬 문서(notify-telegram-email, schedule-deploy 등)의 텔레그램·이메일·Docker·APScheduler 내용은 이 변경으로 **무효**이며, 충돌 시 이 명세를 따른다. §5 스키마는 변경 없음(`alert_kind`는 리포트 분류에 그대로 사용). |
+| 2026-10-08 | 명세 확정: `DRY_RUN=true`이면 `alert_history`를 갱신하지 않고 `reports` 브랜치에도 올리지 않는다. 리포트와 요약은 `out/`에만 쓰고, 분류(NEW/PRICE_DROP/ONGOING)는 기존 이력을 읽기 전용으로 써서 계산한다 | 1단계 질문 해소 |
+| 2026-10-08 | 명세 확정: `reports` 브랜치는 코드와 무관한 **orphan 브랜치**다. 코드 브랜치에서는 `state/`, `reports/`, `out/`을 ignore한다. Routine 실행 시 `git worktree`로 reports 브랜치를 열어 `state/history.sqlite3`를 읽고, 실행 후 리포트·DB를 그 브랜치에 커밋·푸시한다 | 1단계 질문 해소 |
 | 2026-10-08 | 통합 리허설 단지 확정: 잠원동아(complex_no 3009), 잠실엘스(complex_no 22627) | 사용자 답변 |
