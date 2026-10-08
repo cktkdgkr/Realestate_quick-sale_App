@@ -43,7 +43,9 @@ def test_removed_components_absent(rel: str) -> None:
     assert not (PROJECT_ROOT / rel).exists(), rel
 
 
-def test_pipeline_stub_fails_loudly() -> None:
-    r = subprocess.run([sys.executable, "-m", "app.pipeline", "--once"], cwd=PROJECT_ROOT,
+def test_pipeline_cli_requires_once() -> None:
+    # --once 없이 실행하면 아무것도 하지 않고 실패(2)한다. 실제 수집은 하지 않는다 (외부 접속 금지).
+    r = subprocess.run([sys.executable, "-m", "app.pipeline"], cwd=PROJECT_ROOT,
                        capture_output=True, text=True)
-    assert r.returncode != 0
+    assert r.returncode == 2
+    assert "--once" in r.stderr

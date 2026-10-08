@@ -1,0 +1,64 @@
+{
+  "_meta": {
+    "synthetic": true,
+    "created": "2026-10-08",
+    "basis": "naver-land-collector skill §3",
+    "note": "네이버 접속 불가 환경에서 스킬 문서의 필드 후보로 만든 합성 응답. 4단계 전에 실제 응답으로 교체. 개인정보 없음.",
+    "endpoint": "GET /api/complexes/99901?sameAddressGroup=false"
+  },
+  "complexDetail": {
+    "complexNo": "99901",
+    "complexName": "합성테스트아파트",
+    "cortarNo": "1165010700",
+    "realEstateTypeCode": "APT",
+    "address": "서울시 서초구 합성동 1",
+    "roadAddress": "서울시 서초구 합성로 1",
+    "highFloor": 25,
+    "lowFloor": 1,
+    "totalHouseholdCount": 1000
+  },
+  "complexPyeongDetailList": [
+    {
+      "pyeongNo": 1,
+      "pyeongName": "79",
+      "pyeongName2": "24",
+      "supplyArea": "79.34",
+      "exclusiveArea": "59.99"
+    },
+    {
+      "pyeongNo": 2,
+      "pyeongName": "112A",
+      "pyeongName2": "34A",
+      "supplyArea": "112.4",
+      "exclusiveArea": "84.97"
+    },
+    {
+      "pyeongNo": 3,
+      "pyeongName": "113B",
+      "pyeongName2": "34B",
+      "supplyArea": "113.2",
+      "exclusiveArea": "84.03"
+    },
+    {
+      "pyeongNo": 4,
+      "pyeongName": "119",
+      "pyeongName2": "36",
+      "supplyArea": "119.0",
+      "exclusiveArea": "94.5"
+    },
+    {
+      "pyeongNo": 5,
+      "pyeongName": "119B",
+      "pyeongName2": "36B",
+      "supplyArea": "119.01",
+      "exclusiveArea": "95.2"
+    },
+    {
+      "pyeongNo": 6,
+      "pyeongName": "145",
+      "pyeongName2": "44",
+      "supplyArea": "145.2",
+      "exclusiveArea": "114.8"
+    }
+  ]
+}

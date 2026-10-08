@@ -1,0 +1,10 @@
+{
+  "_meta": {
+    "synthetic": true,
+    "created": "2026-10-08",
+    "basis": "naver-land-collector skill §2 (실거래 후보) / molit-trade-api §6",
+    "note": "trade-collector용 합성 응답. 네이버 접속 불가 환경. 4단계 전에 실제 응답으로 교체. 개인정보 없음.",
+    "endpoint": "schema changed sample"
+  },
+  "result": []
+}

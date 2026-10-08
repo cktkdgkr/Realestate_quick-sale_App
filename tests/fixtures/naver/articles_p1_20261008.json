@@ -1,0 +1,76 @@
+{
+  "_meta": {
+    "synthetic": true,
+    "created": "2026-10-08",
+    "basis": "naver-land-collector skill §3",
+    "note": "네이버 접속 불가 환경에서 스킬 문서의 필드 후보로 만든 합성 응답. 4단계 전에 실제 응답으로 교체. 개인정보 없음.",
+    "endpoint": "GET /api/articles/complex/99901?realEstateType=APT&tradeType=A1&page=1&sameAddressGroup=false&order=prc"
+  },
+  "isMoreData": true,
+  "articleList": [
+    {
+      "articleNo": "2600000001",
+      "articleName": "합성테스트아파트",
+      "realEstateTypeCode": "APT",
+      "tradeTypeCode": "A1",
+      "tradeTypeName": "매매",
+      "floorInfo": "10/25",
+      "dealOrWarrantPrc": "12억 5,000",
+      "area1": 112,
+      "area2": 84,
+      "direction": "남향",
+      "articleConfirmYmd": "20261005",
+      "buildingName": "101동",
+      "sameAddrCnt": 1,
+      "areaName": "112A"
+    },
+    {
+      "articleNo": "2600000002",
+      "articleName": "합성테스트아파트",
+      "realEstateTypeCode": "APT",
+      "tradeTypeCode": "A1",
+      "tradeTypeName": "매매",
+      "floorInfo": "10/25",
+      "dealOrWarrantPrc": "12억 3,000",
+      "area1": 112,
+      "area2": 84,
+      "direction": "남향",
+      "articleConfirmYmd": "20261003",
+      "buildingName": "101 동",
+      "sameAddrCnt": 1,
+      "areaName": "112A"
+    },
+    {
+      "articleNo": "2600000003",
+      "articleName": "합성테스트아파트",
+      "realEstateTypeCode": "APT",
+      "tradeTypeCode": "A1",
+      "tradeTypeName": "매매",
+      "floorInfo": "저/25",
+      "dealOrWarrantPrc": "11억",
+      "area1": 112,
+      "area2": 84,
+      "direction": "동향",
+      "articleConfirmYmd": "20261001",
+      "buildingName": "102동",
+      "sameAddrCnt": 1,
+      "areaName": "112A"
+    },
+    {
+      "articleNo": "2600000004",
+      "articleName": "합성테스트아파트",
+      "realEstateTypeCode": "APT",
+      "tradeTypeCode": "A1",
+      "tradeTypeName": "매매",
+      "floorInfo": "15/25",
+      "dealOrWarrantPrc": "18억",
+      "area1": 145,
+      "area2": 114,
+      "direction": "남향",
+      "articleConfirmYmd": "20261002",
+      "buildingName": "103동",
+      "sameAddrCnt": 1,
+      "areaName": "145"
+    }
+  ]
+}

@@ -125,8 +125,11 @@ class MolitClient:
             return self._cache[key]
         items: list[dict[str, str]] = []
         page = 1
+        total: int | None = None
         while True:
-            total, page_items = self._fetch_page(lawd_cd, deal_ymd, page)
+            page_total, page_items = self._fetch_page(lawd_cd, deal_ymd, page)
+            if total is None:
+                total = page_total  # 1페이지의 totalCount를 기준으로 끝까지 받는다
             items.extend(page_items)
             if len(items) >= total or not page_items:
                 if len(items) < total:

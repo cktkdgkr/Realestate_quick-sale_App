@@ -1,0 +1,84 @@
+{
+  "_meta": {
+    "synthetic": true,
+    "created": "2026-10-08",
+    "basis": "naver-land-collector skill §2 (실거래 후보) / molit-trade-api §6",
+    "note": "trade-collector용 합성 응답. 네이버 접속 불가 환경. 4단계 전에 실제 응답으로 교체. 개인정보 없음.",
+    "endpoint": "GET /api/complexes/3009/prices/real?tradeType=A1&areaNo=2&year=5&type=table"
+  },
+  "realPriceOnMonthList": [
+    {
+      "tradeBaseYear": "2026",
+      "tradeBaseMonth": 9,
+      "realPriceList": [
+        {
+          "tradeType": "A1",
+          "tradeYear": "2026",
+          "tradeMonth": 9,
+          "tradeDate": "3",
+          "dealPrice": 235000,
+          "formattedPrice": "",
+          "floor": 12,
+          "deleteYn": "N",
+          "exclusiveArea": null
+        },
+        {
+          "tradeType": "A1",
+          "tradeYear": "2026",
+          "tradeMonth": 9,
+          "tradeDate": "10",
+          "dealPrice": 238000,
+          "formattedPrice": "",
+          "floor": 7,
+          "deleteYn": "Y",
+          "exclusiveArea": null
+        }
+      ]
+    },
+    {
+      "tradeBaseYear": "2024",
+      "tradeBaseMonth": 10,
+      "realPriceList": [
+        {
+          "tradeType": "A1",
+          "tradeYear": "2024",
+          "tradeMonth": 10,
+          "tradeDate": "1",
+          "dealPrice": 230000,
+          "formattedPrice": "",
+          "floor": 3,
+          "deleteYn": "N",
+          "exclusiveArea": null
+        },
+        {
+          "tradeType": "A1",
+          "tradeYear": "2024",
+          "tradeMonth": 10,
+          "tradeDate": "30",
+          "dealPrice": 225000,
+          "formattedPrice": "",
+          "floor": 15,
+          "deleteYn": "N",
+          "exclusiveArea": null
+        }
+      ]
+    },
+    {
+      "tradeBaseYear": "2023",
+      "tradeBaseMonth": 5,
+      "realPriceList": [
+        {
+          "tradeType": "A1",
+          "tradeYear": "2023",
+          "tradeMonth": 5,
+          "tradeDate": "2",
+          "dealPrice": 200000,
+          "formattedPrice": "",
+          "floor": 9,
+          "deleteYn": "N",
+          "exclusiveArea": null
+        }
+      ]
+    }
+  ]
+}

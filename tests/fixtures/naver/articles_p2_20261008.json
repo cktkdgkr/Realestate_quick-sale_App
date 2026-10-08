@@ -1,0 +1,60 @@
+{
+  "_meta": {
+    "synthetic": true,
+    "created": "2026-10-08",
+    "basis": "naver-land-collector skill §3",
+    "note": "네이버 접속 불가 환경에서 스킬 문서의 필드 후보로 만든 합성 응답. 4단계 전에 실제 응답으로 교체. 개인정보 없음.",
+    "endpoint": "GET /api/articles/complex/99901?realEstateType=APT&tradeType=A1&page=2&sameAddressGroup=false&order=prc"
+  },
+  "isMoreData": true,
+  "articleList": [
+    {
+      "articleNo": "2600000002",
+      "articleName": "합성테스트아파트",
+      "realEstateTypeCode": "APT",
+      "tradeTypeCode": "A1",
+      "tradeTypeName": "매매",
+      "floorInfo": "10/25",
+      "dealOrWarrantPrc": "12억 3,000",
+      "area1": 112,
+      "area2": 84,
+      "direction": "남향",
+      "articleConfirmYmd": "20261003",
+      "buildingName": "101 동",
+      "sameAddrCnt": 1,
+      "areaName": "112A"
+    },
+    {
+      "articleNo": "2600000005",
+      "articleName": "합성테스트아파트",
+      "realEstateTypeCode": "APT",
+      "tradeTypeCode": "A1",
+      "tradeTypeName": "매매",
+      "floorInfo": "B1/15",
+      "dealOrWarrantPrc": "10억 500",
+      "area1": 113,
+      "area2": 84,
+      "direction": "서향",
+      "articleConfirmYmd": "20260930",
+      "buildingName": "104동",
+      "sameAddrCnt": 1,
+      "areaName": "113B"
+    },
+    {
+      "articleNo": "2600000006",
+      "articleName": "합성테스트아파트",
+      "realEstateTypeCode": "APT",
+      "tradeTypeCode": "A1",
+      "tradeTypeName": "매매",
+      "floorInfo": "",
+      "dealOrWarrantPrc": "8억 9,000",
+      "area1": 79,
+      "area2": 59,
+      "direction": "",
+      "articleConfirmYmd": "",
+      "buildingName": "",
+      "sameAddrCnt": 1,
+      "areaName": "79"
+    }
+  ]
+}

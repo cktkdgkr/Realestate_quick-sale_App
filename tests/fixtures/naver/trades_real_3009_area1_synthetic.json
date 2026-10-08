@@ -1,0 +1,50 @@
+{
+  "_meta": {
+    "synthetic": true,
+    "created": "2026-10-08",
+    "basis": "naver-land-collector skill §2 (실거래 후보) / molit-trade-api §6",
+    "note": "trade-collector용 합성 응답. 네이버 접속 불가 환경. 4단계 전에 실제 응답으로 교체. 개인정보 없음.",
+    "endpoint": "GET /api/complexes/3009/prices/real?tradeType=A1&areaNo=1&year=5&type=table"
+  },
+  "realPriceOnMonthList": [
+    {
+      "tradeBaseYear": "2026",
+      "tradeBaseMonth": 9,
+      "realPriceList": [
+        {
+          "tradeType": "A1",
+          "tradeYear": "2026",
+          "tradeMonth": 9,
+          "tradeDate": "14",
+          "dealPrice": 170000,
+          "formattedPrice": "",
+          "floor": 2,
+          "deleteYn": "N",
+          "exclusiveArea": null
+        },
+        {
+          "tradeType": "A1",
+          "tradeYear": "2026",
+          "tradeMonth": 9,
+          "tradeDate": "20",
+          "dealPrice": 150000,
+          "formattedPrice": "",
+          "floor": "B1",
+          "deleteYn": "N",
+          "exclusiveArea": null
+        },
+        {
+          "tradeType": "B1",
+          "tradeYear": "2026",
+          "tradeMonth": 9,
+          "tradeDate": "1",
+          "dealPrice": 90000,
+          "formattedPrice": "",
+          "floor": 5,
+          "deleteYn": "N",
+          "exclusiveArea": null
+        }
+      ]
+    }
+  ]
+}

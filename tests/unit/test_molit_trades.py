@@ -273,7 +273,7 @@ def test_httpx_request_log_is_masked(caplog: pytest.LogCaptureFixture) -> None:
     client = _client(FakeMolit())
     with caplog.at_level(logging.INFO, logger="httpx"):
         fetch_trades(client, _complex(), AREAS, AS_OF)
-    assert "serviceKey=***" in caplog.text or caplog.text == ""
+    assert "serviceKey=***" in caplog.text  # httpx INFO 요청 로그가 마스킹됨
     assert "TEST%2BKEY" not in caplog.text and FAKE_KEY not in caplog.text
 
 
