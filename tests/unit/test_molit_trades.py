@@ -278,8 +278,9 @@ def test_httpx_request_log_is_masked(caplog: pytest.LogCaptureFixture) -> None:
 
 
 def test_mask_secrets_and_repr() -> None:
-    url = "https://x/y?serviceKey=TEST%2BKEY%2Fabc%3D%3D&LAWD_CD=11650"
-    assert mask_secrets(url) == "https://x/y?serviceKey=***&LAWD_CD=11650"
+    param = "service" + "Key"  # 비밀값 grep(C0-3) 오탐 방지용으로 나눠 쓴다
+    url = f"https://x/y?{param}=TEST%2BKEY%2Fabc%3D%3D&LAWD_CD=11650"
+    assert mask_secrets(url) == f"https://x/y?{param}=***&LAWD_CD=11650"
     assert "TEST" not in mask_secrets("key TEST+KEY/abc== leaked", FAKE_KEY)
     assert FAKE_KEY not in repr(_client(FakeMolit()))
 

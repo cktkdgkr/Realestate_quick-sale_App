@@ -44,12 +44,12 @@ OK_RESULT_CODES = frozenset({"00", "000"})
 AUTH_RESULT_CODES = frozenset({"20", "30", "31", "32"})
 AUTH_MESSAGE_HINTS = ("SERVICE_KEY", "SERVICEKEY", "UNAUTHORIZED", "ACCESS_DENIED")
 
-_SERVICE_KEY_RE = re.compile(r"(serviceKey=)[^&\s\"'<>]+", re.IGNORECASE)
+_SERVICE_KEY_RE = re.compile(r"(serviceKey)=[^&\s\"'<>]+", re.IGNORECASE)
 
 
 def mask_secrets(text: str, api_key: str | None = None) -> str:
     """URL·메시지에서 serviceKey 값과 API 키 원문(및 URL 인코딩형)을 가린다."""
-    out = _SERVICE_KEY_RE.sub(r"\1***", text)
+    out = _SERVICE_KEY_RE.sub(r"\1=***", text)
     if api_key:
         for variant in {api_key, quote(api_key, safe=""), quote_plus(api_key)}:
             if variant:

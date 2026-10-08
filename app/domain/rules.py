@@ -13,6 +13,7 @@ from datetime import date
 from typing import Literal
 
 from app.domain.models import Listing, Trade, Verdict
+from app.domain.normalize import area_key as _norm_area_key
 
 # §4.3 비율(%) — price * 100 <= base * RATIO
 NORMAL_RATIO = 95
@@ -44,7 +45,10 @@ def _validate_scope(listings: list[Listing], trades: list[Trade]) -> None:
     complex_nos = {x.complex_no for x in listings} | {t.complex_no for t in trades}
     if len(complex_nos) > 1:
         raise ValueError(f"judge 입력에 여러 단지가 섞여 있음: {sorted(complex_nos)}")
-    area_keys = {x.area_key for x in listings} | {t.area_key for t in trades}
+    # CLAUDE.md §9: area_key는 normalize.area_key로 반올림한 값끼리 비교한다
+    area_keys = {_norm_area_key(x.area_key) for x in listings} | {
+        _norm_area_key(t.area_key) for t in trades
+    }
     if len(area_keys) > 1:
         raise ValueError(f"judge 입력에 여러 area_key가 섞여 있음: {sorted(area_keys)}")
     seen: set[str] = set()
@@ -84,14 +88,20 @@ def _is_below(price: int, base: int | None, ratio: int) -> bool:
 
 
 def _discount_pct(price: int, bases: list[int]) -> float | None:
-    """bargain-rules §5: 근거 기준가 중 할인율이 더 큰 쪽 = 기준가가 더 큰 쪽.
+    """CLAUDE.md §9 rules ④ / bargain-rules §5: 표시 전용 할인율.
 
-    어느 쪽을 쓸지는 정수(max)로 고르고, float는 표시용 값 계산에만 쓴다.
+    근거 기준가 중 할인율이 더 큰 쪽 = 기준가가 더 큰 쪽 (정수 max로 고른다).
+    값 = (base - price) / base * 100 을 정수 연산으로 소수 첫째 자리 ROUND_HALF_UP.
     """
     if not bases:
         return None
     base = max(bases)
-    return round((1 - price / base) * 100, 1)
+    num = (base - price) * 1000  # 0.1% 단위 분자
+    if num >= 0:
+        tenths = (2 * num + base) // (2 * base)
+    else:  # 판정상 급매면 price <= base라 오지 않지만, 대칭 반올림(0에서 멀어지는 쪽)으로 둔다
+        tenths = -((-2 * num + base) // (2 * base))
+    return tenths / 10
 
 
 # ---------------------------------------------------------------------------
