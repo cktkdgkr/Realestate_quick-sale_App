@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- _meta synthetic=true created=2026-10-08 source=molit-trade-api SKILL §3 field candidates; replace with real response before stage 4 -->
+<response>
+  <header>
+    <resultCode>000</resultCode>
+    <resultMsg>OK</resultMsg>
+  </header>
+  <body>
+    <items>
+      <item>
+        <aptDong></aptDong>
+        <aptNm>잠원동아</aptNm>
+        <aptSeq>11650-100</aptSeq>
+        <buildYear>1984</buildYear>
+        <cdealDay></cdealDay>
+        <cdealType></cdealType>
+        <dealAmount>230,000</dealAmount>
+        <dealDay>1</dealDay>
+        <dealMonth>10</dealMonth>
+        <dealYear>2024</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <excluUseAr>84.97</excluUseAr>
+        <floor>3</floor>
+        <jibun>60-1</jibun>
+        <sggCd>11650</sggCd>
+        <umdNm>잠원동</umdNm>
+      </item>
+      <item>
+        <aptDong></aptDong>
+        <aptNm>잠원동아</aptNm>
+        <aptSeq>11650-100</aptSeq>
+        <buildYear>1984</buildYear>
+        <cdealDay></cdealDay>
+        <cdealType></cdealType>
+        <dealAmount>225,000</dealAmount>
+        <dealDay>30</dealDay>
+        <dealMonth>10</dealMonth>
+        <dealYear>2024</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <excluUseAr>84.97</excluUseAr>
+        <floor>15</floor>
+        <jibun>60-1</jibun>
+        <sggCd>11650</sggCd>
+        <umdNm>잠원동</umdNm>
+      </item>
+    </items>
+    <numOfRows>1000</numOfRows>
+    <pageNo>1</pageNo>
+    <totalCount>2</totalCount>
+  </body>
+</response>
