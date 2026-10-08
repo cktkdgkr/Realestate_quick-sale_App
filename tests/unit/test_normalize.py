@@ -67,11 +67,33 @@ def test_classify_floor_skill_table(raw, expected):
         ("3", "NORMAL"),
         ("   ", "UNKNOWN"),
         ("/25", "UNKNOWN"),
-        ("3층", "UNKNOWN"),
-        ("저층/15", "UNKNOWN"),
+        ("저층/15", "LOW"),
     ],
 )
 def test_classify_floor_counterexamples(raw, expected):
+    assert classify_floor(raw) == expected
+
+
+# CLAUDE.md §9 (2026-10-08): 층 표기 끝의 "층"은 떼고 해석한다
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("3층", "NORMAL"),
+        ("저층", "LOW"),
+        ("고층/20", "NORMAL"),
+        ("중층", "NORMAL"),
+        ("1층", "LOW"),
+        ("2층/15", "LOW"),
+        ("B1층/15", "LOW"),
+        ("지하1층", "LOW"),
+        (" 12 층 / 25 ", "NORMAL"),
+        ("옥탑", "UNKNOWN"),
+        ("옥탑층", "UNKNOWN"),
+        ("층", "UNKNOWN"),
+        ("층/25", "UNKNOWN"),
+    ],
+)
+def test_classify_floor_strips_trailing_cheung(raw, expected):
     assert classify_floor(raw) == expected
 
 

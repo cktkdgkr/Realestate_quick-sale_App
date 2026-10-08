@@ -102,7 +102,8 @@ class MolitClient:
         if not api_key:
             raise CollectorError("molit_auth", "MOLIT_API_KEY가 비어 있다")
         self._api_key = api_key
-        self._http = http or httpx.Client(timeout=TIMEOUT_S)
+        self._owns_http = http is None
+        self._http = http if http is not None else httpx.Client(timeout=TIMEOUT_S)
         self._sleep: Callable[[float], Any] = sleep
         self._cache: dict[tuple[str, str], list[dict[str, str]]] = {}
         self._requested_once = False
@@ -112,6 +113,16 @@ class MolitClient:
 
     def __repr__(self) -> str:  # 키가 repr로 새지 않게
         return f"MolitClient(cached_months={len(self._cache)})"
+
+    def close(self) -> None:
+        if self._owns_http:
+            self._http.close()
+
+    def __enter__(self) -> MolitClient:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
     def drain_warnings(self) -> list[str]:
         """쌓인 경고를 꺼내고 비운다 (pipeline이 cross_check_warnings 등에 합친다)."""

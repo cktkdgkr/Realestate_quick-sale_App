@@ -360,3 +360,82 @@ def test_C5_2_rules_module_has_no_io_or_clock():
     for banned in ("open(", ".now(", ".today(", "time.time", "httpx", "sqlalchemy", "os.environ",
                    "print("):
         assert banned not in src, banned
+
+
+# ---------------------------------------------------------------------------
+# CLAUDE.md §9 확정 사항 (verifier 반려 1회차 대응)
+# ---------------------------------------------------------------------------
+def test_S9_area_key_equal_after_normalize_round_is_same_area():
+    # 84.97 / 84.9700001 → normalize.area_key로 둘 다 84.97
+    (v,) = judge([L("NORMAL", 95000, "X", area_key=84.97)],
+                 [T(date(2026, 9, 1), 100000, area_key=84.9700001)], AS_OF)
+    assert v.is_bargain is True
+    assert v.reasons == ["TRADE"]
+
+
+def test_S9_area_summary_area_key_rounded_compare():
+    s = area_summary([L("NORMAL", 99000, "X", area_key=59.994)],
+                     [T(date(2026, 9, 1), 100000, area_key=59.99)], AS_OF)
+    assert s["t_normal"] == 100000
+
+
+@pytest.mark.parametrize("fn", [judge, area_summary], ids=["judge", "area_summary"])
+def test_S9_area_key_different_after_round_raises(fn):
+    with pytest.raises(ValueError):
+        fn([L("NORMAL", 95000, "X", area_key=84.97)],
+           [T(date(2026, 9, 1), 100000, area_key=84.98)], AS_OF)
+
+
+def test_S9_unknown_verdict_fields():
+    v = _verdict_of(judge([L("UNKNOWN", 50000, "X"), L("NORMAL", 100000, "A")], BASIC, AS_OF))
+    assert v.is_bargain is False
+    assert v.reasons == []
+    assert v.listing_base is None
+    assert v.discount_pct is None
+
+
+def test_S9_judge_output_order_price_dedup_article_asc():
+    listings = [
+        L("NORMAL", 100000, "B"), L("UNKNOWN", 90000, "Z"), L("NORMAL", 90000, "C"),
+        L("LOW", 90000, "A"), L("NORMAL", 80000, "Y"),
+    ]
+    expected = ["Y", "A", "C", "Z", "B"]  # 가격 → dedup_key 오름차순
+    rng = random.Random(7)
+    for _ in range(10):
+        l2 = listings[:]
+        rng.shuffle(l2)
+        assert [v.listing.dedup_key for v in judge(l2, BASIC, AS_OF)] == expected
+
+
+def test_S9_judge_output_order_article_no_tiebreak():
+    # dedup_key가 같으면 ValueError이므로 article_no 단계는 정렬 키 자체로 확인한다
+    a = L("NORMAL", 90000, "K1")
+    b = L("NORMAL", 90000, "K2")
+    a.article_no, b.article_no = "Z9", "A1"
+    assert [v.listing.dedup_key for v in judge([b, a], [], AS_OF)] == ["K1", "K2"]
+
+
+@pytest.mark.parametrize(
+    "price, expected_pct",
+    [
+        (94950, 5.1),   # 정확히 5.05 → HALF_UP 5.1 (float round는 5.0이 됨)
+        (94951, 5.0),   # 5.049
+        (94949, 5.1),   # 5.051
+        (95000, 5.0),   # 5.00
+    ],
+    ids=["HALF_UP-5.05", "below-5.049", "above-5.051", "exact-5.0"],
+)
+def test_S9_discount_pct_round_half_up_integer(price, expected_pct):
+    v = _verdict_of(judge([L("NORMAL", price, "X")], BASIC, AS_OF))  # T_normal = 100000
+    assert v.reasons == ["TRADE"]
+    assert v.discount_pct == expected_pct
+
+
+def test_S9_discount_pct_half_up_with_odd_base():
+    from app.domain.rules import _discount_pct
+    # (200000-189900)*1000/200000 = 50.5 tenths → 5.05% → 5.1
+    assert _discount_pct(189900, [200000]) == 5.1
+    # (98500-93575)*1000/98500 = 50.0 tenths → 5.0
+    assert _discount_pct(93575, [98500]) == 5.0
+    # 큰 기준가(할인율 큰 쪽) 선택
+    assert _discount_pct(90000, [100000, 110000]) == 18.2

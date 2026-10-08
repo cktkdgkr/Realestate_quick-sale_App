@@ -40,6 +40,8 @@ def classify_floor(raw: str | int | None) -> FloorGroup:
     if not s:
         return "UNKNOWN"
     head = s.split("/", 1)[0]
+    if head.endswith("층"):  # CLAUDE.md §9 (2026-10-08): 끝의 "층"은 떼고 해석 ("3층", "저층", "고층")
+        head = head[:-1]
     if not head:
         return "UNKNOWN"
 

@@ -74,17 +74,17 @@ if [[ -e "$WT" ]]; then
 fi
 g worktree prune || true
 
+LS_ERR="$(mktemp)"
+trap 'rm -f "$LS_ERR"' EXIT
 set +e
-git ls-remote --exit-code --heads "$REMOTE" "$BRANCH" >/dev/null 2>"$REPO_ROOT/.routine-lsremote.err"
+git ls-remote --exit-code --heads "$REMOTE" "$BRANCH" >/dev/null 2>"$LS_ERR"
 LS_RC=$?
 set -e
 if [[ $LS_RC -ne 0 && $LS_RC -ne 2 ]]; then
-  redact <"$REPO_ROOT/.routine-lsremote.err" >&2 || true
-  rm -f "$REPO_ROOT/.routine-lsremote.err"
+  redact <"$LS_ERR" >&2 || true
   # 원격 조회 실패를 "브랜치 없음"으로 오인해 새 orphan을 만들면 이력이 끊긴다. 여기서 멈춘다.
   die "원격 '$REMOTE' 조회 실패 (종료 코드 $LS_RC). 네트워크·권한을 확인하세요." 3
 fi
-rm -f "$REPO_ROOT/.routine-lsremote.err"
 
 mkdir -p "$(dirname "$WT")"
 if [[ $LS_RC -eq 0 ]]; then

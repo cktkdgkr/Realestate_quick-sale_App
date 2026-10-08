@@ -296,3 +296,10 @@ def test_fixtures_marked_synthetic_and_contain_no_key() -> None:
         text = p.read_text(encoding="utf-8")
         assert "_meta synthetic=true" in text, p.name
         assert "serviceKey" not in text, p.name
+
+
+def test_close_does_not_close_injected_http() -> None:
+    http = httpx.Client(transport=httpx.MockTransport(FakeMolit()))
+    with MolitClient(FAKE_KEY, http=http, sleep=lambda s: None) as c:
+        fetch_trades(c, _complex(), AREAS, AS_OF)
+    assert not http.is_closed
