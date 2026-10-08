@@ -4,7 +4,8 @@
     fetch_complex -> fetch_listings -> dedup -> fetch_trades -> fetch_naver_trades·cross_check
     -> area_key별 judge·area_summary
 그 다음 전체에 대해
-    classify_alerts -> render_report·render_summary -> 파일 쓰기 -> (드라이런이 아니면) commit_history
+    매물 수 급감 검사 -> classify_alerts -> prior_alerts -> report.write_outputs(render_report·render_summary·파일 쓰기)
+    -> (드라이런이 아니면) 스냅샷 저장 + commit_history
 
 실패 처리 (CLAUDE.md §7)
 - 단지 하나가 실패해도 나머지 단지는 계속 처리한다. 일부 실패 = PARTIAL, 전부 실패 = FAILED.
@@ -12,7 +13,9 @@
 - 국토부 실거래 수집이 실패하면 그 단지는 "수집 실패"다 (실거래 조건이 빠진 판정을 "급매 없음"처럼 보이게 하지 않기 위해).
 - 네이버 실거래 교차검증 실패는 판정을 막지 않고 경고만 남긴다.
 - 국토부 단지 매핑(molit_apt_seq)이 없는 단지는 실거래 없이(T_normal=None) 매물 기준으로만 판정하고,
-  매핑 후보를 찾아 리포트 context에 넣는다.
+  매핑 후보를 찾아 리포트 context["molit_candidates"]에 넣는다.
+- 수집기 경고(NaverClient.warnings, MolitClient.drain_warnings(), 매물 수 80% 이상 급감)는
+  context["collector_warnings"]로 넘긴다 (RunResult 스키마는 그대로, CLAUDE.md §9).
 - 네이버에서 CollectorError(stage="blocked")가 나면 같은 실행에서 남은 네이버 요청을 모두 중단한다.
 
 종료 코드: OK=0, PARTIAL=1, FAILED=2. 다른 실행이 진행 중이면(락) 아무 파일도 쓰지 않고 2.
@@ -51,7 +54,7 @@ from app.db import (
     make_session_factory,
     upgrade_db,
 )
-from app.domain import dedup, rules
+from app.domain import dedup, normalize, rules
 from app.domain.models import AreaType, Complex, Listing, RunResult, Trade, Verdict
 from app.notify import history, report, summary
 
@@ -177,7 +180,6 @@ def acquire_run_lock(
         raise LockBusy(winner or "?", other_started)
     return released
 
-
 # ---------------------------------------------------------------------------
 # 단지 처리
 # ---------------------------------------------------------------------------
@@ -186,7 +188,8 @@ class ComplexOutcome:
     complex_no: str
     name: str
     status: str = "FAILED"  # OK | FAILED
-    error: str | None = None
+    stage: str | None = None  # 실패 단계 (CollectorError.stage, 그 밖의 예외면 None)
+    error: str | None = None  # 실패 상세 (비밀값 가림)
     complex: Complex | None = None
     area_types: list[AreaType] = field(default_factory=list)
     listings: list[Listing] = field(default_factory=list)  # dedup 후 대표 매물
@@ -195,36 +198,34 @@ class ComplexOutcome:
     naver_trades: list[Trade] = field(default_factory=list)  # 교차검증용
     verdicts: list[Verdict] = field(default_factory=list)
     area_summaries: dict[float, dict] = field(default_factory=dict)
+    trades_by_area: dict[float, list[Trade]] = field(default_factory=dict)
     mapping_needed: bool = False
     apt_seq_candidates: list[dict] = field(default_factory=list)
-    mapping_error: str | None = None
-    cross_check_error: str | None = None
-    warnings: list[str] = field(default_factory=list)
-
-    def as_context(self) -> dict[str, Any]:
-        return {
-            "complex_no": self.complex_no,
-            "name": self.name,
-            "status": self.status,
-            "failed": self.status != "OK",
-            "error": self.error,
-            "complex": self.complex,
-            "area_types": self.area_types,
-            "area_summaries": self.area_summaries,
-            "listings": self.listings,
-            "raw_listing_count": self.raw_listing_count,
-            "trades": self.trades,
-            "naver_trades": self.naver_trades,
-            "verdicts": self.verdicts,
-            "mapping_needed": self.mapping_needed,
-            "apt_seq_candidates": self.apt_seq_candidates,
-            "mapping_error": self.mapping_error,
-            "cross_check_error": self.cross_check_error,
-        }
+    cross_check_warnings: list[str] = field(default_factory=list)
+    collector_warnings: list[str] = field(default_factory=list)
 
 
 class _NaverBlocked(RuntimeError):
-    pass
+    """앞 단지에서 blocked가 감지되어 이 단지의 네이버 요청을 하지 않음."""
+
+    stage = "blocked"
+    detail = "앞 단지에서 네이버 접속 차단(blocked)이 감지되어 이번 실행의 남은 네이버 요청을 중단함"
+
+    def __init__(self) -> None:
+        super().__init__(self.detail)
+
+
+def _drain_warnings(client: Any) -> list[str]:
+    """수집 클라이언트에 쌓인 경고를 꺼내고 비운다 (MolitClient.drain_warnings / NaverClient.warnings)."""
+    drain = getattr(client, "drain_warnings", None)
+    if callable(drain):
+        return list(drain())
+    ws = getattr(client, "warnings", None)
+    if isinstance(ws, list):
+        out = list(ws)
+        ws.clear()
+        return out
+    return []
 
 
 def _process_complex(
@@ -234,21 +235,23 @@ def _process_complex(
     as_of: date,
     naver_state: dict,
     secrets: list[str | None],
-) -> ComplexOutcome:
-    """단지 하나를 처리한다. 수집·판정 실패는 예외로 올린다 (호출자가 격리)."""
-    out = ComplexOutcome(complex_no=entry.complex_no, name=entry.name or entry.complex_no)
+    out: ComplexOutcome,
+) -> None:
+    """단지 하나를 처리해 out을 채운다. 수집·판정 실패는 예외로 올린다 (호출자가 격리)."""
 
     def naver_call(fn, *args):
-        if naver_state.get("blocked"):
-            raise _NaverBlocked(
-                "네이버 접속 차단(blocked)이 감지되어 이번 실행의 남은 네이버 요청을 중단함"
-            )
+        if naver_state.get("blocked") or getattr(naver_client, "blocked", None) is not None:
+            naver_state["blocked"] = True
+            raise _NaverBlocked()
         try:
             return fn(*args)
         except Exception as e:
             if _is_blocked(e):
                 naver_state["blocked"] = True
             raise
+        finally:
+            if getattr(naver_client, "blocked", None) is not None:
+                naver_state["blocked"] = True
 
     # 1) 단지·평형 (공급 119.0㎡ 이하만)
     cx, area_types = naver_call(naver_listings.fetch_complex, naver_client, entry.complex_no)
@@ -257,55 +260,66 @@ def _process_complex(
     out.complex, out.area_types = cx, list(area_types)
     out.name = cx.name or out.name
 
-    # 2) 매물 -> dedup
+    # 2) 매물 -> dedup (판정은 대표 매물만)
     raw = naver_call(naver_listings.fetch_listings, naver_client, cx, out.area_types)
     out.raw_listing_count = len(raw)
-    out.listings = dedup.dedup(raw)
+    out.listings = list(dedup.dedup(raw))
 
     # 3) 국토부 실거래 (판정 기준). 실패하면 단지 전체 실패.
-    if cx.molit_apt_seq:
+    if molit_client is None:
+        # MOLIT_API_KEY 없음: 실거래 기준 생략, 매물 기준으로만 판정 (호출자가 PARTIAL·이력 보호 처리)
+        out.trades = []
+    elif cx.molit_apt_seq:
         out.trades = list(molit_trades.fetch_trades(molit_client, cx, out.area_types, as_of))
+        out.collector_warnings.extend(_drain_warnings(molit_client))
         # 4) 네이버 실거래 교차검증: 실패해도 판정은 진행, 경고만.
         try:
-            out.naver_trades = list(
-                naver_call(naver_trades.fetch_naver_trades, naver_client, cx, out.area_types)
+            nt, nt_warnings = naver_call(
+                naver_trades.fetch_naver_trades_or_warning, naver_client, cx, out.area_types
             )
-            out.warnings.extend(
-                f"{out.name}: {w}" for w in naver_trades.cross_check(out.trades, out.naver_trades, as_of)
-            )
+            out.cross_check_warnings.extend(f"{out.name}: {w}" for w in nt_warnings)
+            if nt is not None:
+                out.naver_trades = list(nt)
+                out.cross_check_warnings.extend(
+                    f"{out.name}: {w}" for w in naver_trades.cross_check(out.trades, out.naver_trades, as_of)
+                )
         except Exception as e:  # 교차검증만 실패 — 숨기지 않고 경고로 남김
-            out.cross_check_error = sanitize(_describe(e), secrets)
-            out.warnings.append(f"{out.name}: 네이버 실거래 교차검증 실패 {out.cross_check_error}")
+            out.cross_check_warnings.append(
+                f"{out.name}: 네이버 실거래 교차검증 실패 {sanitize(_describe(e), secrets)} "
+                "(판정은 국토부 실거래로 진행)"
+            )
     else:
-        # 국토부 단지 매핑 없음: 실거래 조건 없이 매물 기준으로만 판정 + 후보 제시
+        # 국토부 단지 매핑 없음: 실거래 조건 없이(T_normal=None) 매물 기준으로만 판정 + 후보 제시.
+        # 리포트는 Complex.molit_apt_seq=None을 보고 "실거래 매칭 확인 필요"와 후보를 표시한다.
         out.mapping_needed = True
         try:
             out.apt_seq_candidates = list(molit_trades.find_apt_seq_candidates(molit_client, cx, as_of))
         except Exception as e:
-            out.mapping_error = sanitize(_describe(e), secrets)
-        msg = (
-            f"{out.name}: 실거래 매칭 확인 필요 — 국토부 단지 식별자(molit_apt_seq)가 없어 "
-            f"실거래 조건 없이 매물 기준으로만 판정함. 후보 {len(out.apt_seq_candidates)}개"
-        )
-        if out.mapping_error:
-            msg += f" (후보 조회 실패 {out.mapping_error})"
-        out.warnings.append(msg + ". config/complexes.yaml에 molit_apt_seq를 적어 주세요.")
+            out.collector_warnings.append(
+                f"{out.name}({out.complex_no}): 국토부 단지 매핑 후보 조회 실패 {sanitize(_describe(e), secrets)}"
+            )
 
-    # 5) area_key별 판정
-    keys: list[float] = [a.area_key for a in out.area_types]
-    stray = sorted({l.area_key for l in out.listings} - set(keys))
+    # 5) 단지 x area_key별 판정 (rules.judge는 한 단지·한 area_key만 받는다)
+    keys: list[float] = []
+    for a in out.area_types:
+        k = normalize.area_key(a.area_key)
+        if k not in keys:
+            keys.append(k)
+    stray = sorted({normalize.area_key(l.area_key) for l in out.listings} - set(keys))
     if stray:
-        out.warnings.append(f"{out.name}: 평형 목록에 없는 area_key의 매물이 있음 {stray} (따로 판정함)")
+        out.collector_warnings.append(
+            f"{out.name}({out.complex_no}): 평형 목록에 없는 area_key의 매물이 있음 {stray} (따로 판정함)"
+        )
         keys += stray
     verdicts: list[Verdict] = []
     for k in keys:
-        ls = [l for l in out.listings if l.area_key == k]
-        ts = [t for t in out.trades if t.area_key == k]
+        ls = [l for l in out.listings if normalize.area_key(l.area_key) == k]
+        ts = [t for t in out.trades if normalize.area_key(t.area_key) == k]
         verdicts.extend(rules.judge(ls, ts, as_of))
         out.area_summaries[k] = rules.area_summary(ls, ts, as_of)
+        out.trades_by_area[k] = ts
     out.verdicts = verdicts
     out.status = "OK"
-    return out
 
 
 def _decide_status(outcomes: list[ComplexOutcome]) -> str:
@@ -315,6 +329,45 @@ def _decide_status(outcomes: list[ComplexOutcome]) -> str:
     if ok == len(outcomes):
         return "OK"
     return "PARTIAL" if ok else "FAILED"
+
+
+# ---------------------------------------------------------------------------
+# 매물 수 급감 경고 (naver-land-collector §5, CLAUDE.md §9): runs·listings_snapshot 기준
+# ---------------------------------------------------------------------------
+LISTING_DROP_PCT = 80
+_PREV_RUNS_TO_SCAN = 20
+
+
+def listing_drop_warnings(session: Session, run_id: str, outcomes: list[ComplexOutcome]) -> list[str]:
+    """이번에 수집 성공한 단지마다, 그 단지 수집이 성공했던 직전 정식 실행(드라이런 제외)의
+    대표 매물 수와 비교해 80% 이상 줄었으면 경고한다. 정수 비교: cur*100 <= prev*(100-80)."""
+    prev_runs = session.scalars(
+        select(RunRow)
+        .where(RunRow.run_id != run_id, RunRow.dry_run.is_(False), RunRow.status.in_(("OK", "PARTIAL")))
+        .order_by(RunRow.started_at.desc(), literal_column("rowid").desc())
+        .limit(_PREV_RUNS_TO_SCAN)
+    ).all()
+    out: list[str] = []
+    for o in outcomes:
+        if o.status != "OK":
+            continue
+        prev_run = next(
+            (r for r in prev_runs if ((r.complex_results or {}).get(o.complex_no) or {}).get("status") == "OK"),
+            None,
+        )
+        if prev_run is None:
+            continue
+        prev = len(session.scalars(
+            select(ListingSnapshotRow.id).where(
+                ListingSnapshotRow.run_id == prev_run.run_id, ListingSnapshotRow.complex_no == o.complex_no)
+        ).all())
+        cur = len(o.listings)
+        if prev > 0 and cur * 100 <= prev * (100 - LISTING_DROP_PCT):
+            out.append(
+                f"{o.name}({o.complex_no}): 매물 수 급감 — 지난 실행 {prev}건 → 이번 {cur}건 "
+                f"({LISTING_DROP_PCT}% 이상 감소). 네이버 구조 변경이나 수집 누락일 수 있습니다 (docs/RUNBOOK.md)."
+            )
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -370,7 +423,7 @@ def _save_snapshots(s: Session, run_id: str, outcomes: list[ComplexOutcome], ver
 
 
 # ---------------------------------------------------------------------------
-# 파일 쓰기
+# 파일 쓰기 (최소 요약 — 렌더링 전에, 또는 렌더링·이력 커밋이 실패했을 때)
 # ---------------------------------------------------------------------------
 def _atomic_write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -380,9 +433,9 @@ def _atomic_write(path: Path, content: str) -> None:
 
 
 def _fallback_summary(status: str, run_id: str, as_of: date | None, errors: list[str]) -> str:
-    """요약 렌더링 전에(또는 렌더링 자체가) 실패했을 때 쓰는 최소 요약. 첫 줄에 상태를 적는다."""
+    """첫 줄에 상태와 "수집 실패"를 적는다. "급매 없음"으로 보이지 않게 한다 (CLAUDE.md §7)."""
     lines = [
-        f"[{status}] 수집 실패 — 급매 리포트를 만들지 못했습니다 (실행 {run_id}, 기준일 {as_of or '-'})",
+        f"[{status}] [수집 실패] 급매 리포트를 만들지 못했습니다 (실행 {run_id}, 기준일 {as_of or '-'})",
         "",
         "이번 실행 결과를 '급매 없음'으로 보면 안 됩니다. docs/RUNBOOK.md를 보고 조치하세요.",
         "",
@@ -390,6 +443,26 @@ def _fallback_summary(status: str, run_id: str, as_of: date | None, errors: list
     ]
     lines += [f"- {e}" for e in errors] or ["- (상세 없음)"]
     return "\n".join(lines) + "\n"
+
+
+NO_MOLIT_KEY_MSG = (
+    "국토부 API 키 없음 — 실거래 기준 생략 (MOLIT_API_KEY 미설정). 이번 주는 매물끼리 비교한 결과만 있으며, "
+    "실거래 대비 급매는 확인하지 못했습니다. \"급매 없음\"이 아닙니다."
+)
+
+
+def _insert_notice(summary_path: Path, notice: str) -> None:
+    """요약 첫 줄(상태 줄) 바로 아래에 경고 블록을 넣는다. 첫 줄은 notifier 형식 그대로 둔다."""
+    text = summary_path.read_text(encoding="utf-8")
+    first, _, rest = text.partition("\n")
+    _atomic_write(summary_path, f"{first}\n\n## 주의\n- {notice}\n{rest}")
+
+
+def _display_path(p: Path) -> str:
+    try:
+        return str(p.resolve().relative_to(config.PROJECT_ROOT))
+    except ValueError:
+        return str(p)
 
 
 # ---------------------------------------------------------------------------
@@ -400,18 +473,16 @@ def run_once(settings: config.Settings, dry_run: bool) -> int:
     as_of = started_at.date()  # KST 날짜 (CLAUDE.md §9)
     run_id = f"{started_at:%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
     secrets = [settings.molit_api_key]
-    out_dir = settings.out_dir
 
     def fail_early(msg: str) -> int:
         msg = sanitize(msg, secrets)
         log.error(msg)
-        _atomic_write(out_dir / SUMMARY_FILE, _fallback_summary("FAILED", run_id, as_of, [msg]))
+        _atomic_write(settings.out_dir / SUMMARY_FILE, _fallback_summary("FAILED", run_id, as_of, [msg]))
         return EXIT_CODES["FAILED"]
 
     # --- 설정·DB 준비
     try:
         entries = config.load_complexes(settings.complexes_file)
-        api_key = settings.require_molit_api_key()
     except config.ConfigError as e:
         return fail_early(f"설정 오류: {e}")
     try:
@@ -425,18 +496,20 @@ def run_once(settings: config.Settings, dry_run: bool) -> int:
         try:
             released = acquire_run_lock(Session_, run_id, started_at, as_of, dry_run)
         except LockBusy as e:
-            log.error("%s 이번 실행은 중단합니다 (out/·DB 이력 변경 없음).", e)
+            log.error("%s 이번 실행은 중단합니다 (out/·이력 변경 없음).", e)
             return EXIT_CODES["FAILED"]
         for rid in released:
             log.warning("오래된 RUNNING 락 해제: %s", rid)
-        return _run_locked(settings, dry_run, Session_, entries, api_key, run_id, started_at, as_of, secrets)
+        return _run_locked(settings, dry_run, Session_, entries, settings.molit_api_key, run_id, started_at,
+                           as_of, secrets)
     finally:
         engine.dispose()
 
 
 def _run_locked(settings, dry_run, Session_, entries, api_key, run_id, started_at, as_of, secrets) -> int:
     errors: list[str] = []
-    warnings: list[str] = []
+    cc_warnings: list[str] = []
+    col_warnings: list[str] = []
     outcomes: list[ComplexOutcome] = []
     report_path: Path | None = None
     status = "FAILED"
@@ -446,55 +519,74 @@ def _run_locked(settings, dry_run, Session_, entries, api_key, run_id, started_a
         try:
             naver_client = naver_listings.NaverClient()
             clients.append(naver_client)
-            molit_client = molit_trades.MolitClient(api_key)
-            clients.append(molit_client)
+            molit_client = None
+            if api_key:
+                molit_client = molit_trades.MolitClient(api_key)
+                clients.append(molit_client)
         except Exception as e:
             raise RuntimeError(f"수집 클라이언트 생성 실패: {_describe(e)}") from e
+        if molit_client is None:
+            # Orchestrator 확정: 키가 없으면 매물 기준으로만 판정하고 PARTIAL로 끝낸다. "급매 없음"으로 보이면 안 됨.
+            errors.append(NO_MOLIT_KEY_MSG)
+            col_warnings.append(NO_MOLIT_KEY_MSG)
 
         naver_state: dict[str, bool] = {"blocked": False}
         for entry in entries:
-            label = entry.name or entry.complex_no
+            o = ComplexOutcome(complex_no=entry.complex_no, name=entry.name or entry.complex_no)
             try:
-                o = _process_complex(entry, naver_client, molit_client, as_of, naver_state, secrets)
+                _process_complex(entry, naver_client, molit_client, as_of, naver_state, secrets, o)
             except Exception as e:  # 단지 단위 격리 (CLAUDE.md §7)
-                msg = sanitize(_describe(e), secrets)
-                o = ComplexOutcome(complex_no=entry.complex_no, name=label, status="FAILED", error=msg)
-                errors.append(f"{label}({entry.complex_no}): 수집 실패 {msg}")
-                log.error("단지 %s(%s) 수집 실패: %s", label, entry.complex_no, msg)
+                o.status = "FAILED"
+                o.stage = getattr(e, "stage", None)
+                o.error = sanitize(getattr(e, "detail", None) or f"{type(e).__name__}: {e}", secrets)
+                errors.append(sanitize(f"{o.name}({o.complex_no}): 수집 실패 {_describe(e)}", secrets))
+                log.error("단지 %s(%s) 수집 실패: %s", o.name, o.complex_no, errors[-1])
+            finally:
+                for c in clients:
+                    o.collector_warnings.extend(_drain_warnings(c))
             outcomes.append(o)
-            warnings.extend(sanitize(w, secrets) for w in o.warnings)
+            cc_warnings.extend(sanitize(w, secrets) for w in o.cross_check_warnings)
+            col_warnings.extend(sanitize(w, secrets) for w in o.collector_warnings)
 
         failed = {o.complex_no for o in outcomes if o.status != "OK"}
         all_verdicts = [v for o in outcomes if o.status == "OK" for v in o.verdicts]
         status = _decide_status(outcomes)
+        # 이력 보호 대상: 수집 실패 단지 + (키 없음이면) 실거래 기준 없이 판정한 모든 단지.
+        # 실거래 조건으로만 급매였던 매물이 "내려간 매물"로 잘못 처리되지 않게 한다.
+        history_protected = set(failed)
+        if molit_client is None:
+            history_protected |= {o.complex_no for o in outcomes}
+            if status == "OK":
+                status = "PARTIAL"
 
         with Session_() as hs:
-            classified, dropped = history.classify_alerts(hs, all_verdicts, failed, run_id, dry_run)
-            run = RunResult(run_id=run_id, started_at=started_at, status=status, verdicts=list(classified),
-                            errors=list(errors), cross_check_warnings=list(warnings))
-            context = _build_context(settings, dry_run, as_of, outcomes, failed, dropped, naver_state)
-            html = report.render_report(run, context)
-            md = summary.render_summary(run, context)
+            col_warnings.extend(listing_drop_warnings(hs, run_id, outcomes))
+            classified, gone = history.classify_alerts(hs, all_verdicts, history_protected, run_id, dry_run)
+            classified = list(classified)
+            prior = history.prior_alerts(hs, [v.listing.dedup_key for v in classified if v.is_bargain])
+            run = RunResult(run_id=run_id, started_at=started_at, status=status, verdicts=classified,
+                            errors=list(errors), cross_check_warnings=list(cc_warnings))
+            context = _build_context(settings, dry_run, outcomes, gone, prior, col_warnings, naver_state)
 
-            # 파일 쓰기: out/ 은 항상, reports/ 는 드라이런이 아닐 때만
-            _atomic_write(settings.out_dir / OUT_REPORT_FILE, html)
+            # 리포트·요약 파일 쓰기 (드라이런이면 out/ 에만)
+            paths = report.write_outputs(run, context, report_dir=settings.report_dir,
+                                         out_dir=settings.out_dir, dry_run=dry_run)
             if not dry_run:
-                report_path = settings.report_dir / f"{as_of.isoformat()}.html"
-                _atomic_write(report_path, html)
-            _atomic_write(settings.out_dir / SUMMARY_FILE, md)
+                report_path = Path(paths["report"])
+            if molit_client is None:
+                _insert_notice(Path(paths["summary"]), NO_MOLIT_KEY_MSG)
 
-            # 파일 쓰기가 성공한 뒤에만 이력 커밋 (C6-3 조정판)
+            # 파일 쓰기가 성공한 뒤에만 이력 커밋 (C6-3 조정판). commit_history가 session.commit()까지 한다.
             if not dry_run:
-                _save_snapshots(hs, run_id, outcomes, list(classified))
-                history.commit_history(hs, verdicts=list(classified), failed_complex_nos=failed,
-                                       run_id=run_id, dropped=dropped)
+                _save_snapshots(hs, run_id, outcomes, classified)
+                history.commit_history(hs, classified, history_protected, run_id, dry_run=False, now=_utcnow())
                 hs.commit()
             else:
                 hs.rollback()
     except Exception as e:
         msg = sanitize(f"파이프라인 오류: {_describe(e)}", secrets)
         errors.append(msg)
-        log.exception("파이프라인 오류")
+        log.error("파이프라인 오류: %s", msg)
         status = "FAILED"
         _atomic_write(settings.out_dir / SUMMARY_FILE, _fallback_summary("FAILED", run_id, as_of, errors))
     finally:
@@ -506,28 +598,34 @@ def _run_locked(settings, dry_run, Session_, entries, api_key, run_id, started_a
                 except Exception as e:  # 정리 실패는 결과에 영향 없음, 로그만
                     log.warning("클라이언트 정리 실패: %s", sanitize(_describe(e), secrets))
 
-    _finish_run(Session_, run_id, status, errors, warnings, outcomes, report_path)
+    _finish_run(Session_, run_id, status, errors, cc_warnings + col_warnings, outcomes, report_path)
     log.info("실행 %s 종료: %s (단지 %d개, 실패 %d개, 드라이런=%s)", run_id, status, len(outcomes),
              sum(1 for o in outcomes if o.status != "OK"), dry_run)
     return EXIT_CODES[status]
 
 
-def _build_context(settings, dry_run, as_of, outcomes, failed, dropped, naver_state) -> dict[str, Any]:
-    failed_list = [
-        {"complex_no": o.complex_no, "name": o.name, "error": o.error} for o in outcomes if o.status != "OK"
-    ]
+def _build_context(settings, dry_run, outcomes, gone, prior, col_warnings, naver_state) -> dict[str, Any]:
+    """리포트 context. 키 계약은 app/notify/report.py 모듈 docstring (notifier 소유)."""
+    ok = [o for o in outcomes if o.status == "OK"]
     return {
-        "as_of": as_of,
+        # 필수
+        "complexes": [o.complex for o in outcomes if o.complex is not None],
+        "area_types": {o.complex_no: list(o.area_types) for o in ok},
+        "area_summaries": {(o.complex_no, k): s for o in ok for k, s in o.area_summaries.items()},
+        "gone": list(gone),
+        "failures": [
+            {"complex_no": o.complex_no, "name": o.name, "stage": o.stage, "detail": o.error}
+            for o in outcomes if o.status != "OK"
+        ],
+        # 선택
+        "prior_alerts": dict(prior),
+        "molit_candidates": {o.complex_no: list(o.apt_seq_candidates) for o in ok if o.mapping_needed},
+        "trades": {(o.complex_no, k): ts for o in ok for k, ts in o.trades_by_area.items()},
         "dry_run": dry_run,
-        "business_tz": config.BUSINESS_TZ_NAME,
-        "complexes": [o.as_context() for o in outcomes],
-        "complex_count": len(outcomes),
-        "failed_complex_nos": set(failed),
-        "failed_complexes": failed_list,
-        "dropped": list(dropped),
-        "mapping_needed": [o.as_context() for o in outcomes if o.status == "OK" and o.mapping_needed],
+        "complexes_file": _display_path(settings.complexes_file),
+        # CLAUDE.md §9: 수집기 경고(평형 미매칭, 매물 수 급감 등). RunResult 스키마는 그대로.
+        "collector_warnings": list(col_warnings),
         "naver_blocked": bool(naver_state.get("blocked")),
-        "complexes_file": "config/complexes.yaml",
     }
 
 
@@ -536,6 +634,7 @@ def _finish_run(Session_, run_id, status, errors, warnings, outcomes, report_pat
         o.complex_no: {
             "name": o.name,
             "status": o.status,
+            "stage": o.stage,
             "error": o.error,
             "listing_count": len(o.listings),
             "raw_listing_count": o.raw_listing_count,
@@ -549,7 +648,7 @@ def _finish_run(Session_, run_id, status, errors, warnings, outcomes, report_pat
         row.status = status
         row.finished_at = _utcnow()
         row.errors = list(errors)
-        row.cross_check_warnings = list(warnings)
+        row.cross_check_warnings = list(warnings)  # 교차검증 경고 + 수집기 경고
         row.complex_results = results
         row.report_path = str(report_path) if report_path else None
 
@@ -579,8 +678,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             _atomic_write(config.PROJECT_ROOT / config.DEFAULT_OUT_DIR / SUMMARY_FILE,
                           _fallback_summary("FAILED", "-", None, [f"설정 오류: {e}"]))
-        except OSError:
-            pass  # 요약도 못 쓰면 로그와 종료 코드 2로만 알린다
+        except OSError as we:  # 요약도 못 쓰면 로그와 종료 코드 2로 알린다
+            log.error("요약 파일도 쓰지 못함: %s", we)
         return EXIT_CODES["FAILED"]
     dry_run = bool(args.dry_run or settings.dry_run)
     try:
