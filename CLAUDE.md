@@ -15,21 +15,30 @@
    - 네이버 부동산에서 **매매** 매물을 수집한다.
    - 국토교통부 실거래가 API에서 **매매** 실거래를 수집하고, 네이버 실거래 탭과 교차검증한다.
 3. 급매 판정 규칙(§4)에 따라 급매를 찾는다.
-4. 신규 급매 또는 가격 인하된 급매가 있으면 **텔레그램 알림**을 보낸다.
-5. 급매 유무와 상관없이 **이메일 주간 리포트**를 보낸다.
-6. 수집이 실패하면 "급매 없음"으로 처리하지 않고 **실패 알림**을 보낸다.
+4. 신규 급매 또는 가격 인하된 급매가 있으면 리포트 맨 위 **"이번 주 알림"** 섹션에 올리고, 실행 요약(`out/summary.md`) 첫 줄에 건수를 적는다. (텔레그램 사용 안 함 — §9 참고)
+5. 급매 유무와 상관없이 **HTML 주간 리포트 파일**을 만든다. (이메일 발송 안 함 — §9 참고)
+6. 수집이 실패하면 "급매 없음"으로 처리하지 않고, 리포트와 실행 요약 맨 위에 **"수집 실패"** 를 표시한다.
+
+### 1.1 실행 환경 (2026-10-08 확정)
+- 서버 없이 **Claude Routine(정기 실행)** 으로 돌린다. Routine은 매주 화요일 10:00 KST에 새 클라우드 세션을 열고, 이 저장소에서 `python -m app.pipeline --once`를 실행한다.
+- 실행 결과는 저장소의 **`reports` 브랜치**에 커밋·푸시해 보존한다.
+  - `reports/YYYY-MM-DD.html`: 주간 리포트
+  - `state/history.sqlite3`: 재알림 이력 DB (다음 실행이 이 파일을 읽는다)
+- 사용자에게는 Routine 완료 알림(Claude 앱 푸시·메일)으로 `out/summary.md` 내용이 전달된다. 앱 코드는 메일·메신저를 직접 보내지 않는다.
+- 같은 코드는 사용자 PC에서도 `python -m app.pipeline --once`로 똑같이 돌아가야 한다.
 
 ## 2. 기술 스택 (변경 시 Orchestrator 승인 필요)
 
 | 영역 | 선택 |
 |---|---|
 | 언어 | Python 3.12 |
-| 웹 | FastAPI + Jinja2 + htmx (SPA 프레임워크 사용 안 함) |
+| 단지 등록 | `config/complexes.yaml` (단지 URL 또는 complex_no 목록). 웹 서버 없음 |
+| 리포트 | Jinja2로 만든 단일 HTML 파일 (외부 CSS·JS 없이 인라인) |
 | DB | SQLite (SQLAlchemy 2.x, Alembic 마이그레이션) |
 | HTTP | httpx (타임아웃·재시도 필수) |
-| 스케줄 | APScheduler `CronTrigger(day_of_week="tue", hour=10, minute=0, timezone="Asia/Seoul")` |
+| 스케줄 | Claude Routine, cron `CRON_TZ=Asia/Seoul 0 10 * * 2` (앱 안에 상주 스케줄러 없음) |
 | 테스트 | pytest, 외부 호출은 전부 fixture/mock |
-| 배포 | Docker Compose, 클라우드 VM 1대 |
+| 배포 | 없음. Routine 세션 또는 사용자 PC에서 실행 (Docker·VM 사용 안 함) |
 | 비밀값 | `.env` (저장소에 커밋 금지, `.env.example`만 커밋) |
 
 ## 3. 용어와 데이터 정의
@@ -98,10 +107,10 @@ LOW:    price * 100 <= base * 90
 
 ### 4.4 재알림 규칙
 - 급매 이력은 dedup 키 단위로 DB에 저장한다 (`first_alerted_at`, `last_alerted_price`).
-- **신규 급매** → 텔레그램 알림 + 이메일 상단에 "신규".
-- **이전에 알린 급매가 더 낮은 가격으로** 다시 급매 → 텔레그램 알림 + 이메일 "가격 인하 (이전가 → 현재가)".
-- **같거나 높은 가격으로 계속 급매** → 텔레그램 알림 없음, 이메일에 "지속 중"으로만 표시.
-- 매물이 사라지면 이력은 유지하되 이메일에 "지난주 급매 중 내려간 매물"로 1회 표시.
+- **신규 급매** → 리포트 "이번 주 알림" 섹션 + "신규" 표시.
+- **이전에 알린 급매가 더 낮은 가격으로** 다시 급매 → "이번 주 알림" 섹션 + "가격 인하 (이전가 → 현재가)".
+- **같거나 높은 가격으로 계속 급매** → "이번 주 알림"에 넣지 않고, 리포트 본문에 "지속 중"으로만 표시.
+- 매물이 사라지면 이력은 유지하되 리포트에 "지난주 급매 중 내려간 매물"로 1회 표시.
 
 ## 5. 공통 데이터 스키마 (모듈 간 인터페이스)
 
@@ -135,19 +144,20 @@ app/
   domain/normalize.py              # 층·면적·가격 정규화 (공용, 매물 조사 agent 소유)
   domain/dedup.py                  # 매물 조사 agent
   domain/rules.py                  # 급매 판정 agent (순수 함수, I/O 금지)
-  notify/telegram.py, notify/email.py, notify/templates/   # 알림·리포트 agent
-  web/                             # 웹·인프라 agent
-  db/ , scheduler.py, pipeline.py  # 웹·인프라 agent (pipeline은 Orchestrator와 공동)
+  notify/report.py, notify/summary.py, notify/history.py, notify/templates/   # 알림·리포트 agent
+  config.py                        # 웹·인프라 agent (complexes.yaml·.env 로드)
+  db/ , pipeline.py                # 웹·인프라 agent (pipeline은 Orchestrator와 공동)
+config/complexes.yaml              # 조사 대상 단지 목록 (사용자 편집)
 tests/
   fixtures/                        # 실제 응답을 저장한 JSON/XML (개인정보 제거)
   unit/, integration/
-deploy/  docker-compose.yml, Dockerfile, .env.example
-docs/   RUNBOOK.md, USER_GUIDE.md
+.env.example                      # MOLIT_API_KEY 등 (실제 .env는 커밋 금지)
+docs/   RUNBOOK.md, USER_GUIDE.md, ROUTINE.md (Routine 설정·reports 브랜치 운영)
 ```
 
 ## 7. 실패 처리 원칙
 - 단지 하나가 실패해도 나머지 단지는 계속 처리한다 → `status=PARTIAL`.
-- 실패한 단지·평형은 리포트와 텔레그램에 **명시적으로** "수집 실패"로 표시한다. 절대 "급매 없음"으로 보이면 안 된다.
+- 실패한 단지·평형은 리포트와 실행 요약에 **명시적으로** "수집 실패"로 표시한다. 절대 "급매 없음"으로 보이면 안 된다.
 - 국토부와 네이버 실거래가 다르면 국토부를 기준으로 쓰고 차이를 `cross_check_warnings`에 남긴다.
 
 ## 8. 하지 말 것
@@ -168,3 +178,5 @@ docs/   RUNBOOK.md, USER_GUIDE.md
 |---|---|---|
 | (최초) | 명세 확정 | 사용자 인터뷰 결과 반영 |
 | 2026-10-08 | §8에 "과금 관련 일체 금지" 추가 | 사용자 요청: 모든 agent(Orchestrator 포함)가 과금 관련 내용을 건드리거나 사용하지 않도록 |
+| 2026-10-08 | §1.1 신설, §1·§2·§4.4·§6·§7 수정: 텔레그램·이메일·웹 서버·Docker·APScheduler 제거 → Claude Routine 실행 + HTML 리포트 파일 + `reports` 브랜치 보존 + `config/complexes.yaml` | 사용자 답변: 서버 없음, 실행은 Claude Routine, 리포트는 HTML 파일, 텔레그램 없음. 스킬 문서(notify-telegram-email, schedule-deploy 등)의 텔레그램·이메일·Docker·APScheduler 내용은 이 변경으로 **무효**이며, 충돌 시 이 명세를 따른다. §5 스키마는 변경 없음(`alert_kind`는 리포트 분류에 그대로 사용). |
+| 2026-10-08 | 통합 리허설 단지 확정: 잠원동아(complex_no 3009), 잠실엘스(complex_no 22627) | 사용자 답변 |
