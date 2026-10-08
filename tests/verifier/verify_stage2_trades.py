@@ -268,8 +268,12 @@ def T(src, d, p, fl=10, ak=84.97, canc=False, cno="C1"):
 
 w = cross_check([T("MOLIT", date(2026, 5, 1), 230000)], [T("NAVER", date(2026, 5, 2), 231000)], as_of)
 check("cross: 가격 불일치 WARN 1건", len(w) == 1 and w[0].startswith("[WARN]") and "불일치" in w[0], str(w))
-w = cross_check([T("MOLIT", date(2026, 8, 6), 230000), T("MOLIT", date(2026, 8, 5), 230000, fl=11)], [], as_of)
-check("cross: 국토부에만 — 2개월 이내 INFO, 밖 WARN", sorted(x[:6] for x in w) == ["[INFO]", "[WARN]"], str(w))
+w = cross_check([T("MOLIT", date(2026, 8, 6), 230000), T("MOLIT", date(2026, 8, 5), 230000, fl=11),
+                 T("MOLIT", date(2024, 10, 1), 200000, fl=12)], [], as_of)
+# CLAUDE.md §9 명세 확정(실거래) ①: 국토부에만 있는 거래는 기간 무관 [INFO]
+check("cross: 국토부에만 — 기간 무관 INFO (§9 실거래 ①)", len(w) == 3 and all(x.startswith("[INFO]") for x in w), str(w))
+check("cross: 국토부에만 — 최근 2개월(경계 포함)만 '반영 지연' 문구", sum("반영 지연" in x for x in w) == 1
+      and any("2026-08-06" in x and "반영 지연" in x for x in w), str(w))
 w = cross_check([], [T("NAVER", date(2025, 3, 1), 200000)], as_of)
 check("cross: 네이버에만 WARN", len(w) == 1 and w[0].startswith("[WARN]") and "네이버에만" in w[0], str(w))
 w = cross_check([T("MOLIT", date(2025, 3, 1), 200000)], [T("NAVER", date(2025, 3, 20), 200000)], as_of)
@@ -297,6 +301,76 @@ sleeps: list[float] = []
 f = Fake()
 fetch_trades(client(f, sleeps), cx(), AREAS, as_of)
 check("molit: 요청 간 대기, 25요청→24대기", len(sleeps) == 24 and all(s > 0 for s in sleeps), str(sleeps[:3]))
+
+# ---------------------------------------------------------------- 10. 재검증 추가 (2차)
+# 빈 area_types: 요청 없이 [] (대상 평형 0개는 정상), 단 매핑 오류는 여전히 먼저 오류
+f = Fake({("11650", "202609", "1"): xml([item()])})
+c = client(f)
+check("empty area_types: 요청 없이 [], 경고 없음", fetch_trades(c, cx(), [], as_of) == [] and not f.calls and not c.warnings, "")
+for bad_cx, label in ((cx(seq=None), "seq None"), (cx(seq="  "), "seq 공백"), (cx(lawd="11x"), "lawd 오류")):
+    try:
+        fetch_trades(client(Fake()), bad_cx, [], as_of)
+        check(f"empty area_types + {label} → complex_mapping", False, "no error")
+    except CollectorError as e:
+        check(f"empty area_types + {label} → complex_mapping", e.stage == "complex_mapping", str(e))
+# 소문자 인코딩형 키 반사
+log_buf2 = io.StringIO(); h2 = logging.StreamHandler(log_buf2); root.addHandler(h2)
+f = Fake(fn=lambda r: httpx.Response(200, text="ERR key=rawkey%2b%2f%3dzq9secretvalue%3d%3d"))
+try:
+    fetch_trades(client(f), cx(), AREAS, as_of)
+    check("key-leak: 소문자 인코딩형 반사", False, "no error")
+except CollectorError as e:
+    check("key-leak: 소문자 인코딩형 반사 가림", "zq9secret" not in str(e).lower() and "zq9secret" not in repr(e.__context__).lower()
+          and e.__cause__ is None and e.__suppress_context__, f"{e} / ctx={e.__context__!r}")
+# 정상 응답 파싱은 마스킹 전처리 후에도 그대로
+tr = fetch_trades(client(Fake({("11650", "202609", "1"): xml([item()])})), cx(), AREAS, as_of)
+check("mask 전처리 후 정상 파싱 유지", [t.price for t in tr] == [235000], str(tr))
+root.removeHandler(h2)
+
+# 네이버 실거래: 지하층·필수 필드 (§9 실거래 ③④)
+import json as _json
+from app.collectors.naver_listings import NaverClient
+from app.collectors.naver_trades import fetch_naver_trades, parse_naver_trade_floor
+fl_cases = {"B1": -1, "B2": -2, "지하1": -1, "지하 1층": -1, "B1층": -1, "b1": -1, 3: 3, "12": 12, "옥탑": None, None: None}
+badf = [f"{k!r}: {parse_naver_trade_floor(k)} != {v}" for k, v in fl_cases.items() if parse_naver_trade_floor(k) != v]
+check("naver floor: 지하 → 음수, 파싱 불가 → None", not badf, "; ".join(badf))
+CXN = Complex("3009", "합성", "11650", "", 15, "S1")
+AREAN = [AreaType("3009", 84.97, 84.97, 112.4, 34, "112")]
+cplx = (ROOT / "tests/fixtures/naver/trades_complex_3009_synthetic.json").read_text()
+def naver_with(items):
+    body = _json.dumps({"realPriceOnMonthList": [{"realPriceList": items}]})
+    def h(req):
+        txt = cplx if req.url.path == "/api/complexes/3009" else body
+        return httpx.Response(200, text=txt, headers={"content-type": "application/json"})
+    return NaverClient(http=httpx.Client(transport=httpx.MockTransport(h)), sleep=lambda s: None, rng=lambda: 0.5)
+base = {"tradeType": "A1", "tradeYear": "2026", "tradeMonth": 9, "tradeDate": "3", "dealPrice": 235000,
+        "floor": "B1", "deleteYn": "N"}
+nt = fetch_naver_trades(naver_with([base]), CXN, AREAN)
+check("naver: B1 거래 → floor=-1, LOW", [(t.floor, t.floor_group) for t in nt] == [(-1, "LOW")], str(nt))
+w = cross_check([Trade("3009", 84.97, 84.97, -1, "LOW", 235000, date(2026, 9, 3), False, "중개거래", "MOLIT")], nt, as_of)
+check("cross: 국토부 -1층과 네이버 B1 짝지음 → 경고 없음", w == [], str(w))
+for fld in ("tradeType", "tradeYear", "tradeMonth", "tradeDate", "floor"):
+    it = dict(base); it.pop(fld)
+    try:
+        fetch_naver_trades(naver_with([it]), CXN, AREAN)
+        check(f"naver: '{fld}' 누락 → schema_changed", False, "no error")
+    except CollectorError as e:
+        check(f"naver: '{fld}' 누락 → schema_changed", e.stage == "schema_changed", str(e))
+it = dict(base); it.pop("dealPrice")
+try:
+    fetch_naver_trades(naver_with([it]), CXN, AREAN)
+    check("naver: 가격 필드 모두 누락 → schema_changed", False, "no error")
+except CollectorError as e:
+    check("naver: 가격 필드 모두 누락 → schema_changed", e.stage == "schema_changed", str(e))
+it = dict(base); it["tradeType"] = "B1"; it.pop("floor")
+try:
+    fetch_naver_trades(naver_with([it]), CXN, AREAN)
+    check("naver: 전세 항목도 floor 누락이면 schema_changed", False, "no error")
+except CollectorError as e:
+    check("naver: 전세 항목도 floor 누락이면 schema_changed", e.stage == "schema_changed", str(e))
+cl = naver_with([dict(base, floor="옥탑")])
+nt = fetch_naver_trades(cl, CXN, AREAN)
+check("naver: 파싱 불가 층은 제외 + 경고", nt == [] and any("층 값 오류 1건" in x for x in cl.warnings), str(cl.warnings))
 
 fails = [r for r in RESULTS if not r[1]]
 for name, ok, detail in RESULTS:
