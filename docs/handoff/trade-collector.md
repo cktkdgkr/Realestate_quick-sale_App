@@ -58,7 +58,7 @@ fixture는 스킬 문서(molit-trade-api §3, naver-land-collector §2)의 필�
 - 그 밖의 매칭 실패는 단지별 1줄로 `MolitClient.warnings`에 쌓는다. 예:
   `[WARN] 단지 3009 국토부 실거래 평형 매칭 실패 1건 제외 (전용 72.3㎡ 1건)`
 - 층 값이 정수가 아닌 거래는 제외하고 `[WARN] ... 층 값 오류 N건 제외`.
-- **pipeline 요청**: `fetch_trades` 뒤에 `molit_client.drain_warnings()`를 호출해 `cross_check_warnings`에 합쳐 주세요. 현재 `app/pipeline.py`는 이 경고를 읽지 않는다. 네이버 실거래 층 오류 경고는 `NaverClient.warnings`에 들어간다.
+- **pipeline 요청**: CLAUDE.md §9(수집기 경고 전달 방식)에 따라 `fetch_trades` 뒤에 `molit_client.drain_warnings()`를 호출해 리포트 context의 `collector_warnings`에 넣어 주세요. 현재 `app/pipeline.py`는 이 경고를 읽지 않는다. 네이버 실거래 층 오류 경고는 `NaverClient.warnings`에 들어간다. `cross_check` 결과는 `cross_check_warnings`용이다.
 
 ## 5. 네이버 실거래·교차검증
 - 요청(가정): ① `GET /api/complexes/{no}?sameAddressGroup=false` 로 `pyeongName → pyeongNo` 매핑(AreaType.type_name = pyeongName), ② 평형마다 `GET /api/complexes/{no}/prices/real?complexNo=..&tradeType=A1&areaNo={pyeongNo}&year=5&type=table`. 모두 `NaverClient.get_json`(순차·2~5초 대기·차단 감지) 경유.

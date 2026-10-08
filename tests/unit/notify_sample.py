@@ -144,6 +144,7 @@ def sample_context_base() -> dict:
                 Trade(ELS, 84.88, 84.88, 15, "NORMAL", 270000, date(2026, 9, 12), False, "중개거래", "MOLIT"),
             ],
         },
+        "collector_warnings": ["잠실엘스: 평형을 찾지 못한 매물 1건 (전용 101.2㎡) — 집계에서 제외"],
         "complexes_file": "config/complexes.yaml",
         "dry_run": False,
         "report_path": "reports/2026-10-13.html",

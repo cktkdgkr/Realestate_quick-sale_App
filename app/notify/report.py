@@ -16,6 +16,7 @@ context 키는 docs/handoff/notifier.md "context 계약" 참고. 요약은 아�
 - prior_alerts: dict[dedup_key, dict]            history.prior_alerts 결과 (PRICE_DROP이 있으면 필수)
 - molit_candidates: dict[complex_no, list[dict]] molit_apt_seq 미설정 단지의 후보
 - trades: dict[(complex_no, area_key), list[Trade]]   저층 실거래 참고 표시용
+- collector_warnings: list[str]                  수집기 경고 (평형 미매칭, 매물 수 급감 등. CLAUDE.md §9)
 - dry_run: bool, report_path: str, complexes_file: str
 """
 
@@ -65,8 +66,19 @@ def fmt_price(manwon: int | None) -> str:
 
 
 def pct_below(price: int, base: int) -> float:
-    """표시용 할인율. bargain-rules §5와 같은 식 (판정에는 쓰지 않는다)."""
-    return round((1 - price / base) * 100, 1)
+    """표시용 할인율 (판정에는 쓰지 않는다).
+
+    CLAUDE.md §9 rules ④와 같은 식: (base - price) / base × 100을 정수 연산으로
+    소수 첫째 자리 ROUND_HALF_UP. Verdict.discount_pct와 같은 값이 나오도록 맞춘다.
+    """
+    if base <= 0:
+        raise ValueError(f"기준가가 0 이하입니다: {base}")
+    num = (base - price) * 1000
+    if num >= 0:
+        tenths = (2 * num + base) // (2 * base)
+    else:
+        tenths = -((-2 * num + base) // (2 * base))
+    return tenths / 10
 
 
 def reason_lines(v: Verdict, trade_sample_count: int | None) -> list[str]:
@@ -359,6 +371,7 @@ def build_view(run: RunResult, context: Mapping) -> dict:
         "complexes_file": complexes_file,
         "errors": [redact(e) for e in run.errors],
         "warnings": [redact(w) for w in run.cross_check_warnings],
+        "collector_warnings": [redact(w) for w in context.get("collector_warnings") or []],
         "report_path": context.get("report_path"),
     }
 

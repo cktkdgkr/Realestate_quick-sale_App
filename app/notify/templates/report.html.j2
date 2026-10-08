@@ -71,7 +71,7 @@
 <!-- 2. 이번 주 알림 -->
 {{ section_title("이번 주 알림 (신규 · 가격 인하)") }}
 {% for it in v.alerts %}{{ bargain_card(it) }}{% else %}
-<p style="font-size:14px;margin:4px 0;">{% if v.has_failure %}수집에 성공한 단지에서는 신규·가격 인하 급매가 없습니다. <strong style="color:#d1242f;">수집 실패 단지는 확인하지 못했습니다.</strong>{% else %}신규·가격 인하 급매가 없습니다.{% endif %}</p>
+<p style="font-size:14px;margin:4px 0;">{% if v.status == "FAILED" %}<strong style="color:#d1242f;">수집 실패로 급매를 확인하지 못했습니다.</strong>{% elif v.has_failure %}수집에 성공한 단지에서는 신규·가격 인하 급매가 없습니다. <strong style="color:#d1242f;">수집 실패 단지는 확인하지 못했습니다.</strong>{% else %}신규·가격 인하 급매가 없습니다.{% endif %}</p>
 {% endfor %}
 
 <!-- 3. 지속 중 -->
@@ -154,11 +154,15 @@
 {% endfor %}
 
 <!-- 6. 교차검증 경고·수집 오류 -->
-{% if v.warnings or v.errors %}
+{% if v.warnings or v.errors or v.collector_warnings %}
 {{ section_title("교차검증 경고 · 수집 오류") }}
 {% if v.errors %}
 <p style="font-size:13px;margin:4px 0;font-weight:bold;color:#d1242f;">수집 오류</p>
 <ul style="margin:0 0 8px 0;padding-left:18px;font-size:12px;">{% for e in v.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+{% endif %}
+{% if v.collector_warnings %}
+<p style="font-size:13px;margin:4px 0;font-weight:bold;color:#9a6700;">수집 경고</p>
+<ul style="margin:0 0 8px 0;padding-left:18px;font-size:12px;">{% for w in v.collector_warnings %}<li>{{ w }}</li>{% endfor %}</ul>
 {% endif %}
 {% if v.warnings %}
 <p style="font-size:13px;margin:4px 0;font-weight:bold;color:#9a6700;">교차검증 경고 (국토부 기준으로 판정)</p>

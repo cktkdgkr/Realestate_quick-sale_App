@@ -58,6 +58,8 @@ def render_summary(run: RunResult, context: dict) -> str:
     out.append("## 이번 주 알림 (신규·가격 인하)")
     if v["alerts"]:
         out.extend(_item_line(it) for it in v["alerts"])
+    elif v["status"] == "FAILED":
+        out.append("- 수집 실패로 급매를 확인하지 못했습니다.")
     elif v["has_failure"]:
         out.append("- 수집에 성공한 단지에서는 신규·가격 인하 급매가 없습니다. 수집 실패 단지는 확인하지 못했습니다.")
     else:
@@ -74,6 +76,8 @@ def render_summary(run: RunResult, context: dict) -> str:
         checks.append(f"- 실거래 부족: {v['no_trade_areas']}개 평형은 실거래 조건 없이 매물 비교로만 판정했습니다.")
     if v["unknown_total"]:
         checks.append(f"- 층 미상: 매물 {v['unknown_total']}건은 층을 알 수 없어 판정에서 뺐습니다.")
+    if v["collector_warnings"]:
+        checks.append(f"- 수집 경고 {len(v['collector_warnings'])}건 (리포트 참고)")
     if v["warnings"]:
         checks.append(f"- 교차검증 경고 {len(v['warnings'])}건 (리포트 참고)")
     if v["errors"]:

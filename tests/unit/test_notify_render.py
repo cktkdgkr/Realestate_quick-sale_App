@@ -290,3 +290,21 @@ def _history(session) -> dict:
     session.expire_all()
     return {r.dedup_key: (r.last_alerted_price, r.active, r.deactivated_run_id, r.last_seen_run_id)
             for r in session.scalars(select(AlertHistoryRow))}
+
+
+@pytest.mark.parametrize("price,base", [(95000, 100000), (93575, 98500), (238000, 270000),
+                                        (99950, 100000), (1, 3), (2, 3), (90005, 100000), (85, 200)])
+def test_pct_matches_rules_discount(price, base):
+    """표시 할인율이 rules가 넣는 Verdict.discount_pct와 같은 반올림을 쓴다 (CLAUDE.md §9 rules ④)."""
+    from app.domain.rules import _discount_pct
+
+    from app.notify.report import pct_below
+
+    assert pct_below(price, base) == _discount_pct(price, [base])
+
+
+def test_collector_warnings_shown(sample):
+    run, ctx, _ = sample
+    html = render_report(run, ctx)
+    assert "수집 경고" in html and "평형을 찾지 못한 매물 1건" in html
+    assert "수집 경고 1건" in render_summary(run, ctx)
