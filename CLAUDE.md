@@ -160,6 +160,65 @@ docs/   RUNBOOK.md, USER_GUIDE.md, ROUTINE.md (Routine 설정·reports 브랜치
 - 실패한 단지·평형은 리포트와 실행 요약에 **명시적으로** "수집 실패"로 표시한다. 절대 "급매 없음"으로 보이면 안 된다.
 - 국토부와 네이버 실거래가 다르면 국토부를 기준으로 쓰고 차이를 `cross_check_warnings`에 남긴다.
 
+## 10. 모듈 함수 인터페이스 (2단계 계약, 변경은 Orchestrator 승인)
+
+모든 모듈은 §5 dataclass만 주고받는다. 아래 이름·시그니처를 그대로 쓴다. 내부 보조 함수는 자유다.
+
+```python
+# app/collectors/errors.py  (소유: listing-collector)
+class CollectorError(Exception):
+    def __init__(self, stage: str, detail: str = "", complex_no: str | None = None): ...
+    # stage: "blocked" | "schema_changed" | "network" | "molit_api" | "molit_auth" | "complex_mapping"
+
+# app/domain/normalize.py  (소유: listing-collector, 순수 함수)
+classify_floor(raw: str | int | None) -> Literal["LOW","NORMAL","UNKNOWN"]
+area_key(exclusive_m2: float) -> float
+to_pyeong(supply_m2: float) -> int
+is_target_area(supply_m2: float) -> bool            # supply_m2 <= 119.0
+match_area(exclusive_m2: float, area_types: list[AreaType]) -> AreaType | None
+parse_price(s: str) -> int                          # 만원 정수, 실패 시 ValueError
+format_price(manwon: int) -> str                    # 125000 -> "12억 5,000", 90000 -> "9억", 8500 -> "8,500"
+
+# app/domain/dedup.py  (소유: listing-collector)
+dedup(listings: list[Listing]) -> list[Listing]      # 대표 매물만 반환
+
+# app/collectors/naver_listings.py  (소유: listing-collector)
+class NaverClient:                                   # 순차 요청·2~5초 대기·재시도·blocked 감지, sleep/clock 주입 가능
+    def __init__(self, http: httpx.Client | None = None, sleep=time.sleep, rng=random.random): ...
+fetch_complex(client, complex_no: str) -> tuple[Complex, list[AreaType]]   # AreaType은 공급 ≤119.0㎡만
+fetch_listings(client, complex: Complex, area_types: list[AreaType]) -> list[Listing]  # dedup 전 원본 매물
+
+# app/collectors/molit_trades.py  (소유: trade-collector)
+class MolitClient:
+    def __init__(self, api_key: str, http: httpx.Client | None = None, sleep=time.sleep): ...
+fetch_trades(client, complex: Complex, area_types: list[AreaType], as_of: date) -> list[Trade]  # 25개월, 해제 거래 포함
+find_apt_seq_candidates(client, complex: Complex, as_of: date) -> list[dict]   # molit_apt_seq 미설정 시 후보 제시용
+
+# app/collectors/naver_trades.py  (소유: trade-collector)
+fetch_naver_trades(client: NaverClient, complex: Complex, area_types: list[AreaType]) -> list[Trade]
+cross_check(molit: list[Trade], naver: list[Trade], as_of: date) -> list[str]  # cross_check_warnings 문자열
+
+# app/domain/rules.py  (소유: bargain-judge, 순수 함수, I/O·현재 시각 호출 금지)
+judge(listings: list[Listing], trades: list[Trade], as_of: date) -> list[Verdict]
+    # 한 단지 × 한 area_key 단위. 반환 Verdict.alert_kind는 항상 None (분류는 notify.history가 채운다)
+area_summary(listings: list[Listing], trades: list[Trade], as_of: date) -> dict
+    # 리포트 현황표용: t_normal, trade_sample_count, trade_sample_short, l_normal_min, l_low_min, listing_count, unknown_count
+
+# app/notify/history.py  (소유: notifier)
+classify_alerts(session, verdicts: list[Verdict], failed_complex_nos: set[str], run_id: str,
+                dry_run: bool) -> tuple[list[Verdict], list[dict]]
+    # alert_kind를 채운 Verdict 목록, 그리고 "지난주 급매 중 내려간 매물" 목록. dry_run이면 DB를 바꾸지 않는다
+commit_history(session, ...)                         # 리포트·요약 파일 쓰기가 성공한 뒤에만 호출
+
+# app/notify/report.py, app/notify/summary.py  (소유: notifier)
+render_report(run: RunResult, context: dict) -> str  # 단일 HTML (인라인 스타일)
+render_summary(run: RunResult, context: dict) -> str # out/summary.md 내용. 첫 줄 = 상태·신규/인하 건수·수집 실패 여부
+    # context에는 단지별 Complex, AreaType, area_summary, 내려간 매물, 실패 단지 목록 등이 들어간다. 키 이름은 notifier가 정하고 handoff에 적는다
+
+# app/pipeline.py  (소유: web-infra, Orchestrator 공동)
+main(argv) -> int     # python -m app.pipeline --once [--dry-run]. 종료 코드: OK=0, PARTIAL=1, FAILED=2
+```
+
 ## 8. 하지 말 것
 - 짧은 간격의 대량 요청, 병렬 크롤링. 네이버 요청은 순차 실행, 요청 간 2~5초 랜덤 대기.
 - 로그인·캡차 우회, 프록시 회전 등 차단 회피 기법.
@@ -183,4 +242,7 @@ docs/   RUNBOOK.md, USER_GUIDE.md, ROUTINE.md (Routine 설정·reports 브랜치
 | 2026-10-08 | 명세 확정: `reports` 브랜치는 코드와 무관한 **orphan 브랜치**다. 코드 브랜치에서는 `state/`, `reports/`, `out/`을 ignore한다. Routine 실행 시 `git worktree`로 reports 브랜치를 열어 `state/history.sqlite3`를 읽고, 실행 후 리포트·DB를 그 브랜치에 커밋·푸시한다 | 1단계 질문 해소 |
 | 2026-10-08 | 명세 확정: 업무 시간대는 코드 상수 `Asia/Seoul`로 **고정**한다. 설정 키·OS 환경변수(`TZ` 등)로 바꿀 수 없다. 기준일 `as_of`, 24개월 창, 리포트 파일명은 모두 KST 날짜다 | 1단계 검증 모호점 Q1 |
 | 2026-10-08 | 명세 확정: `.env.example`에는 비밀값이 아닌 경로 설정 키(`DB_PATH`, `REPORT_DIR`, `OUT_DIR`, `COMPLEXES_FILE`)를 두어도 된다 | 1단계 검증 모호점 Q2 |
+| 2026-10-08 | §10 모듈 함수 인터페이스 신설 | 2단계 병렬 구현 시 모듈 간 연결을 고정 |
+| 2026-10-08 | 체크리스트 조정 (텔레그램·이메일·웹·Docker 제거에 따름): C6-3은 "리포트·요약 파일 쓰기 성공 후에만 이력 커밋"으로 바꾼다. C6-4는 "summary.md 첫 줄에 상태·신규/인하 건수·수집 실패 표시"로 바꾼다. C6-5는 "HTML 리포트에 notify-telegram-email §4 본문 1~7 순서(웹 링크 제외)"로 바꾼다. C7-1·C7-2·C7-6은 삭제한다. C7-4는 "docs/ROUTINE.md의 cron이 화요일 10:00 KST이고, as_of가 TZ=UTC 환경에서도 KST 날짜"로 바꾼다. C7-5는 `runs` 테이블 RUNNING 락으로 유지한다. C7-7의 RUNBOOK 증상에서 "메일 안 옴·서버 재시작"은 "Routine 실행 실패·reports 브랜치 푸시 실패"로 대체한다. molit 단지 매핑의 "웹 화면에 확인 필요"는 "리포트에 후보 목록과 complexes.yaml 수정 방법 표시"로 대체한다 | §1.1 변경의 후속 |
+| 2026-10-08 | C3-1 임시 완화: 이 개발 환경은 네이버·국토부 접속이 막혀 있다. 2단계 fixture는 스킬 문서의 필드 후보로 만든 **합성 fixture**를 허용한다. 대신 파일에 `"_meta": {"synthetic": true}`(XML이면 주석)를 표시한다. 4단계 전에 실제 응답으로 교체하고 C3-1·C4를 재검증한다 | 네트워크 정책 |
 | 2026-10-08 | 통합 리허설 단지 확정: 잠원동아(complex_no 3009), 잠실엘스(complex_no 22627) | 사용자 답변 |
