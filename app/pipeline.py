@@ -560,7 +560,9 @@ def _run_locked(settings, dry_run, Session_, entries, api_key, run_id, started_a
 
         with Session_() as hs:
             col_warnings.extend(listing_drop_warnings(hs, run_id, outcomes))
-            classified, gone = history.classify_alerts(hs, all_verdicts, history_protected, run_id, dry_run)
+            target = {e.complex_no for e in entries}  # 이번 실행 대상 (complexes.yaml)
+            classified, gone = history.classify_alerts(hs, all_verdicts, history_protected, run_id, dry_run,
+                                                       target_complex_nos=target)
             classified = list(classified)
             prior = history.prior_alerts(hs, [v.listing.dedup_key for v in classified if v.is_bargain])
             run = RunResult(run_id=run_id, started_at=started_at, status=status, verdicts=classified,
@@ -578,14 +580,15 @@ def _run_locked(settings, dry_run, Session_, entries, api_key, run_id, started_a
             # 파일 쓰기가 성공한 뒤에만 이력 커밋 (C6-3 조정판). commit_history가 session.commit()까지 한다.
             if not dry_run:
                 _save_snapshots(hs, run_id, outcomes, classified)
-                history.commit_history(hs, classified, history_protected, run_id, dry_run=False, now=_utcnow())
+                history.commit_history(hs, classified, history_protected, run_id, dry_run=False,
+                                       target_complex_nos=target, now=_utcnow())
                 hs.commit()
             else:
                 hs.rollback()
     except Exception as e:
         msg = sanitize(f"파이프라인 오류: {_describe(e)}", secrets)
         errors.append(msg)
-        log.error("파이프라인 오류: %s", msg)
+        log.error("%s", msg)
         status = "FAILED"
         _atomic_write(settings.out_dir / SUMMARY_FILE, _fallback_summary("FAILED", run_id, as_of, errors))
     finally:

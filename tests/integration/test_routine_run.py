@@ -64,7 +64,7 @@ REAL_PIPELINE_DRIVER = textwrap.dedent(
         return [Listing("1", cx.complex_no, 84.97, "101동", "5/20", "NORMAL", "남", 90000, None, 1, [],
                         cx.complex_no + "|k", "https://example.invalid")]
 
-    def classify(session, verdicts, failed, run_id, dry_run):
+    def classify(session, verdicts, failed, run_id, dry_run, target_complex_nos=None):
         from sqlalchemy import text
         prev = session.execute(text("select count(*) from runs")).scalar()
         for v in verdicts:

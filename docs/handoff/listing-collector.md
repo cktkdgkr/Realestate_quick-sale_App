@@ -14,7 +14,7 @@
 | `tests/unit/test_naver_listings.py` | 평형 필터, 3페이지 페이지네이션, blocked/schema_changed/network, 대기·백오프·타임아웃 |
 | `tests/fixtures/naver/*_20261008.json`, `captcha_20261008.html` | **합성 fixture** (`_meta.synthetic=true`) |
 
-테스트 결과: `pytest -q` 전체 257 passed (본인 테스트: normalize 71, dedup 12, naver_listings 29).
+테스트 결과: `pytest -q` 전체 403 passed (본인 테스트: normalize 87, dedup 12, naver_listings 33). `tests/verifier/verify_stage2_listing.py` FAILS: [].
 
 ## 2. 엔드포인트 (미확인 — 반드시 4단계 전에 확인)
 2026-10-08 현재 이 개발 환경은 네이버 접속이 막혀 있어 **실제 요청을 한 번도 보내지 않았다**. 아래는 naver-land-collector 스킬 §2의 후보 그대로다.
@@ -61,11 +61,15 @@
 4. `fetch_listings`에 넘긴 대상 평형이 0개면 요청 없이 `[]`.
 5. `alt_prices`: 그룹 내 **대표 가격과 다른** 호가만, 중복 제거·오름차순 (D01 → `[100000]`). 스킬 §2-4 "다른 가격 목록"을 이렇게 해석했다.
 6. `dedup()`은 입력을 바꾸지 않고 사본을 돌려준다. `dedup_key`는 필드에서 다시 계산한다. 결과 순서는 그룹이 입력에 처음 나온 순서.
-7. `parse_price`: 0 이하도 ValueError. 비문자열 입력도 ValueError. `"12억 5천"`, `"12.5억"`은 ValueError (명세 밖 형식).
+7. `parse_price`: "억" 뒤 숫자가 10000 이상이면 ValueError (`"10억 15000"`, CLAUDE.md §9 명세 확정(매물) ①). 0 이하도 ValueError. 비문자열 입력도 ValueError. `"12억 5천"`, `"12.5억"`은 ValueError (명세 밖 형식).
 8. `classify_floor`: 슬래시 앞부분 끝의 `층`은 떼고 해석한다 (CLAUDE.md §9 2026-10-08 확정). `"3층"`→NORMAL, `"1층"`→LOW, `"저층"`→LOW, `"중층"`·`"고층/20"`→NORMAL. `"옥탑"`, `"층"`만 있는 표기 등 그 밖의 텍스트는 UNKNOWN.
 9. 3xx 리다이렉트도 blocked로 본다 (API가 로그인·캡차 페이지로 보내는 경우). 404 등 그 밖의 4xx는 재시도 없이 `network`. 5xx·전송 오류만 재시도.
 10. 대기: 두 번째 요청부터 매 요청 전 `2 + 3*rng()`초. 재시도 때는 백오프(5/15/45s)를 쉰 뒤 이 대기도 한 번 더 한다.
 11. `Authorization` 토큰은 구현하지 않았다. 토큰이 필요하면 401이 나서 blocked로 실패가 드러난다 (조용히 0건이 되지 않음).
+12. **dedup은 1회만 적용** (CLAUDE.md §9 명세 확정(매물) ②): `fetch_listings` 원본에 한 번만 호출하는 pipeline 계약이다. 멱등이 아니어서 대표 매물 목록에 다시 적용하면 `realtor_count`가 1로, `alt_prices`가 `[]`로 덮어써진다.
+13. **평형 미매칭 처리** (CLAUDE.md §9 명세 확정(매물) ③): "미매칭"은 평형을 특정하지 못한 매물이다. `area1`(공급) > 119.0으로 대상 외가 확정된 매물은 미매칭으로 세지 않는다. 그래서 대상 외 매물만 있으면 `[]`(정상)이다.
+    - 미매칭이 1건 이상이고 매칭된 매물이 0건이면 `CollectorError("schema_changed")`.
+    - 미매칭 / (매칭 + 미매칭)이 50% 이상이면 `client.warnings` 메시지에 "50% 이상, 구조 변경 의심"을 붙인다. 50% 미만이면 건수만 남긴다.
 
 ## 5. 다른 agent용 메모
 - **trade-collector (`naver_trades`)**: 같은 `NaverClient` 인스턴스의 `client.get_json(path, params, complex_no=...)`을 쓰면 대기·재시도·blocked 감지가 그대로 적용된다. `client.blocked`가 설정되면 이후 모든 `get_json`은 요청 없이 `CollectorError("blocked")`.

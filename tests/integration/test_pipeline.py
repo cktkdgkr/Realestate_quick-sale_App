@@ -168,16 +168,16 @@ def fakes(monkeypatch: pytest.MonkeyPatch) -> Fakes:
     def area_summary(listings, trades, as_of):
         return {"listing_count": len(listings), "trade_sample_count": len(trades)}
 
-    def classify_alerts(session, verdicts, failed_complex_nos, run_id, dry_run):
+    def classify_alerts(session, verdicts, failed_complex_nos, run_id, dry_run, target_complex_nos):
         f.classify_args.append(dict(verdicts=list(verdicts), failed=set(failed_complex_nos),
-                                    run_id=run_id, dry_run=dry_run))
+                                    run_id=run_id, dry_run=dry_run, target=set(target_complex_nos)))
         for v in verdicts:
             v.alert_kind = "NEW" if v.is_bargain else None
         return verdicts, []
 
-    def commit_history(session, verdicts, failed_complex_nos, run_id, *, dry_run, now=None):
+    def commit_history(session, verdicts, failed_complex_nos, run_id, *, dry_run, target_complex_nos, now=None):
         f.commit_calls.append(dict(verdicts=verdicts, failed_complex_nos=set(failed_complex_nos),
-                                   run_id=run_id, dry_run=dry_run, now=now))
+                                   run_id=run_id, dry_run=dry_run, now=now, target=set(target_complex_nos)))
         session.commit()
 
     def render_report(run, context):
@@ -244,6 +244,7 @@ def test_all_ok(env: Path, fakes: Fakes) -> None:
     assert len(fakes.commit_calls) == 1
     assert fakes.classify_args[0]["dry_run"] is False
     assert fakes.classify_args[0]["failed"] == set()
+    assert fakes.classify_args[0]["target"] == fakes.commit_calls[0]["target"] == {"111", "222", "333"}
     (run,) = _runs(env)
     assert run.status == "OK" and run.finished_at is not None and run.dry_run is False
     assert run.report_path.endswith("2026-10-13.html")

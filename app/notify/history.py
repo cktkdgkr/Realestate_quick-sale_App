@@ -10,6 +10,8 @@
 dry_run이면 어느 함수도 DB를 바꾸지 않는다 (CLAUDE.md §9).
 수집 실패 단지(failed_complex_nos)의 이력은 읽기만 하고 절대 바꾸지 않는다. 그 단지의 active 이력은
 "내려간 매물"로도 잡지 않는다 (실패를 "매물 사라짐"으로 오인하지 않기 위해).
+이번 실행 대상이 아닌 단지(target_complex_nos에 없음 = complexes.yaml에서 뺀 단지)의 active 이력은
+"내려간 매물"로 표시하지 않고, commit_history가 조용히 비활성화한다 (CLAUDE.md §10).
 
 alert_history 열 의미 (app/db/models.py AlertHistoryRow)
 - active=True: 지금 급매로 알려진 상태. 다음 실행에서 급매면 PRICE_DROP/ONGOING 비교 대상.
@@ -36,7 +38,8 @@ AlertKind = Literal["NEW", "PRICE_DROP", "ONGOING"]
 @dataclass(frozen=True)
 class _Plan:
     kinds: dict[str, AlertKind]                     # dedup_key -> 분류 (급매만)
-    gone: list[dict]                                # 내려간 매물
+    gone: list[dict]                                # 내려간 매물 (리포트 표시)
+    retired: list[str]                              # 대상에서 빠진 단지의 active 이력 (조용히 비활성화)
     bargains: dict[str, Verdict]                    # dedup_key -> 급매 Verdict (실패 단지 포함)
 
 
@@ -60,8 +63,12 @@ def _load_rows(session: Session, keys: Iterable[str] | None = None) -> dict[str,
     return {r.dedup_key: r for r in session.scalars(stmt)}
 
 
-def _plan(session: Session, verdicts: list[Verdict], failed_complex_nos: set[str]) -> _Plan:
+def _plan(session: Session, verdicts: list[Verdict], failed_complex_nos: set[str],
+          target_complex_nos: set[str]) -> _Plan:
     _check_unique(verdicts)
+    outside = sorted({v.listing.complex_no for v in verdicts} - target_complex_nos)
+    if outside:
+        raise ValueError(f"target_complex_nos에 없는 단지의 Verdict가 들어왔습니다: {outside}")
     with session.no_autoflush:
         rows = _load_rows(session)
 
@@ -79,12 +86,16 @@ def _plan(session: Session, verdicts: list[Verdict], failed_complex_nos: set[str
             kinds[key] = "ONGOING"
 
     gone: list[dict] = []
+    retired: list[str] = []
     for key in sorted(rows):
         row = rows[key]
         if not row.active or key in bargains:
             continue
         if row.complex_no in failed_complex_nos:
             continue  # 수집 실패 단지: 사라졌는지 알 수 없다
+        if row.complex_no not in target_complex_nos:
+            retired.append(key)  # 조사 대상에서 빠진 단지: 매물이 내려간 것이 아니다
+            continue
         current = by_key.get(key)
         gone.append(
             {
@@ -99,7 +110,7 @@ def _plan(session: Session, verdicts: list[Verdict], failed_complex_nos: set[str
                 "listing": current.listing if current is not None else None,
             }
         )
-    return _Plan(kinds=kinds, gone=gone, bargains=bargains)
+    return _Plan(kinds=kinds, gone=gone, retired=retired, bargains=bargains)
 
 
 def classify_alerts(
@@ -108,6 +119,7 @@ def classify_alerts(
     failed_complex_nos: set[str],
     run_id: str,
     dry_run: bool,
+    target_complex_nos: set[str],
 ) -> tuple[list[Verdict], list[dict]]:
     """alert_kind를 채운 Verdict 목록과 "지난주 급매 중 내려간 매물" 목록을 돌려준다.
 
@@ -116,10 +128,11 @@ def classify_alerts(
     - 입력 Verdict는 바꾸지 않고 복사본을 돌려준다. 순서는 입력과 같다.
     - 내려간 매물 dict 키: dedup_key, complex_no, area_key, last_alerted_price, first_alerted_at,
       last_alerted_at, reason("GONE"|"NOT_BARGAIN"), listing(Listing|None, NOT_BARGAIN일 때 현재 매물).
-      수집 실패 단지의 이력은 포함하지 않는다.
+      수집 실패 단지와 이번 실행 대상이 아닌 단지(target_complex_nos에 없음)의 이력은 포함하지 않는다.
+    - target_complex_nos에 없는 단지의 Verdict가 들어오면 ValueError.
     """
     del run_id, dry_run  # 읽기 전용이라 쓰지 않는다. §10 시그니처 유지용.
-    plan = _plan(session, verdicts, set(failed_complex_nos))
+    plan = _plan(session, verdicts, set(failed_complex_nos), set(target_complex_nos))
     out = [
         replace(v, alert_kind=plan.kinds.get(v.listing.dedup_key) if v.is_bargain else None)
         for v in verdicts
@@ -152,6 +165,7 @@ def commit_history(
     run_id: str,
     *,
     dry_run: bool,
+    target_complex_nos: set[str],
     now: datetime | None = None,
 ) -> dict[str, int]:
     """이번 실행 결과로 alert_history를 갱신하고 session.commit()한다.
@@ -165,15 +179,17 @@ def commit_history(
     | 급매 | active, 현재가 < 이전 알림가 | PRICE_DROP: last_alerted_price=현재가, last_alerted_at=now |
     | 급매 | active, 현재가 ≥ 이전 알림가 | ONGOING: last_seen_run_id만 갱신 |
     | 급매 아님 / 매물 없음 | active | active=False, deactivated_run_id=run_id |
+    | (대상에서 빠진 단지) | active | active=False, deactivated_run_id=run_id (리포트 표시 없음) |
 
     수집 실패 단지(failed_complex_nos)의 행은 만들지도 바꾸지도 않는다.
     dry_run이면 아무것도 바꾸지 않고 집계만 돌려준다.
-    반환: {"NEW": n, "PRICE_DROP": n, "ONGOING": n, "DEACTIVATED": n, "SKIPPED_FAILED": n, "dry_run": 0|1}
+    반환: {"NEW": n, "PRICE_DROP": n, "ONGOING": n, "DEACTIVATED": n, "RETIRED": n,
+          "SKIPPED_FAILED": n, "dry_run": 0|1}
     """
     failed = set(failed_complex_nos)
-    plan = _plan(session, verdicts, failed)
-    stats = {"NEW": 0, "PRICE_DROP": 0, "ONGOING": 0, "DEACTIVATED": 0, "SKIPPED_FAILED": 0,
-             "dry_run": int(dry_run)}
+    plan = _plan(session, verdicts, failed, set(target_complex_nos))
+    stats = {"NEW": 0, "PRICE_DROP": 0, "ONGOING": 0, "DEACTIVATED": 0, "RETIRED": 0,
+             "SKIPPED_FAILED": 0, "dry_run": int(dry_run)}
 
     now = now or datetime.now(UTC)
     if now.tzinfo is None or now.utcoffset() is None:
@@ -207,14 +223,14 @@ def commit_history(
             row.last_alerted_at = now
         row.last_seen_run_id = run_id
 
-    gone_rows = _load_rows(session, [g["dedup_key"] for g in plan.gone])
-    for g in plan.gone:
-        stats["DEACTIVATED"] += 1
-        if dry_run:
-            continue
-        row = gone_rows[g["dedup_key"]]
-        row.active = False
-        row.deactivated_run_id = run_id
+    off_keys = [g["dedup_key"] for g in plan.gone] + plan.retired
+    off_rows = _load_rows(session, off_keys)
+    stats["DEACTIVATED"] = len(plan.gone)
+    stats["RETIRED"] = len(plan.retired)
+    if not dry_run:
+        for k in off_keys:
+            off_rows[k].active = False
+            off_rows[k].deactivated_run_id = run_id
 
     if not dry_run:
         session.commit()

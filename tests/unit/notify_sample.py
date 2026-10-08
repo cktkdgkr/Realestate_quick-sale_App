@@ -23,6 +23,7 @@ PREV_RUN_AT = datetime(2026, 10, 6, 1, 0, tzinfo=UTC)
 RUN_ID = "20261013-100000"
 
 ELS, DONGA, HELIO = "22627", "3009", "111515"
+TARGETS = {ELS, DONGA, HELIO}
 
 
 def stub_format_price(manwon: int) -> str:
@@ -134,8 +135,10 @@ def sample_context_base() -> dict:
         ],
         "molit_candidates": {
             DONGA: [
-                {"aptSeq": "11650-0101", "aptNm": "동아", "umdNm": "잠원동", "jibun": "65"},
-                {"aptSeq": "11650-0102", "aptNm": "동아(2차)", "umdNm": "잠원동", "jibun": "70"},
+                {"apt_seq": "11650-0101", "apt_nm": "동아", "umd_nm": "잠원동", "jibun": "65",
+                 "trade_count": 14, "last_contract": "2026-09-03", "score": 4, "hints": ["지번 일치"]},
+                {"apt_seq": "11650-0102", "apt_nm": "동아(2차)", "umd_nm": "잠원동", "jibun": "70",
+                 "trade_count": 3, "last_contract": "2026-05-21", "score": 2, "hints": []},
             ],
         },
         "trades": {
@@ -157,7 +160,8 @@ def build_sample(session: Session | None = None) -> tuple[RunResult, dict, Sessi
     seed_history(session)
     ctx = sample_context_base()
     failed = {f["complex_no"] for f in ctx["failures"]}
-    verdicts, gone = classify_alerts(session, sample_verdicts(), failed, RUN_ID, dry_run=False)
+    verdicts, gone = classify_alerts(session, sample_verdicts(), failed, RUN_ID, dry_run=False,
+                                     target_complex_nos=TARGETS)
     ctx["gone"] = gone
     ctx["prior_alerts"] = prior_alerts(
         session, [v.listing.dedup_key for v in verdicts if v.alert_kind == "PRICE_DROP"]

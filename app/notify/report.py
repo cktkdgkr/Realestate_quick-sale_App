@@ -15,6 +15,7 @@ context 키는 docs/handoff/notifier.md "context 계약" 참고. 요약은 아�
 선택
 - prior_alerts: dict[dedup_key, dict]            history.prior_alerts 결과 (PRICE_DROP이 있으면 필수)
 - molit_candidates: dict[complex_no, list[dict]] molit_apt_seq 미설정 단지의 후보
+                                                 (키: apt_seq, apt_nm, umd_nm, jibun, trade_count, last_contract)
 - trades: dict[(complex_no, area_key), list[Trade]]   저층 실거래 참고 표시용
 - collector_warnings: list[str]                  수집기 경고 (평형 미매칭, 매물 수 급감 등. CLAUDE.md §9)
 - dry_run: bool, report_path: str, complexes_file: str
@@ -316,9 +317,14 @@ def build_view(run: RunResult, context: Mapping) -> dict:
             })
         cands = []
         for c in candidates.get(cno, []):
-            seq = c.get("aptSeq") or c.get("apt_seq") or c.get("molit_apt_seq")
-            rest = ", ".join(f"{k}={c[k]}" for k in sorted(c) if k not in ("aptSeq", "apt_seq", "molit_apt_seq"))
-            cands.append({"seq": seq, "desc": rest})
+            # 키는 find_apt_seq_candidates 기준으로 고정 (CLAUDE.md §10). score·hints 등 나머지는 표시하지 않는다.
+            place = " ".join(str(c[k]) for k in ("umd_nm", "jibun") if c.get(k))
+            desc = f"{c.get('apt_nm') or '-'}" + (f" ({place})" if place else "")
+            if c.get("trade_count") is not None:
+                desc += f" · 거래 {c['trade_count']}건"
+            if c.get("last_contract"):
+                desc += f" · 최근 계약 {c['last_contract']}"
+            cands.append({"seq": c["apt_seq"], "desc": desc})
         status_rows.append({
             "complex_no": cno,
             "name": cx_name(cno),
