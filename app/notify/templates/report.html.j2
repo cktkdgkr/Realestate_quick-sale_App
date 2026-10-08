@@ -110,7 +110,8 @@
   <br>해결 방법: {{ v.complexes_file }}의 이 단지 항목에 아래처럼 적고 다음 실행을 기다리세요.
   <pre style="margin:4px 0;padding:6px;background:#ffffff;border:1px solid #d0d7de;font-size:12px;white-space:pre-wrap;">  - complex_no: "{{ r.complex_no }}"
     name: {{ r.name }}
-    molit_apt_seq: "{{ r.candidates[0].seq if r.candidates and r.candidates[0].seq else "후보 중 맞는 식별자" }}"</pre>
+    molit_apt_seq: "{{ r.candidates[0].seq if r.candidates|length == 1 and r.candidates[0].seq else "위 후보 중 맞는 식별자" }}"</pre>
+  {% if r.candidates|length > 1 %}<span style="font-size:12px;">후보가 여럿입니다. 주소·지번을 네이버 단지 정보와 맞춰 보고 하나를 고르세요.</span>{% endif %}
 </div>
 {% endif %}
 {% if r.areas %}

@@ -109,7 +109,7 @@ def reason_lines(v: Verdict, trade_sample_count: int | None) -> list[str]:
 
 
 def redact(text: str) -> str:
-    """오류 문자열에 섞인 비밀값(serviceKey= 등)을 가린다 (CLAUDE.md §8)."""
+    """오류 문자열에 섞인 비밀값(serviceKey, api_key, token, password 파라미터 값)을 가린다 (CLAUDE.md §8)."""
     return _SECRET_RE.sub(lambda m: f"{m.group(1)}=***", str(text))
 
 
@@ -334,7 +334,8 @@ def build_view(run: RunResult, context: Mapping) -> dict:
             "unknown_listings": [
                 {
                     "area_label": _area_label(at_by_key.get((cno, v.listing.area_key)), v.listing.area_key),
-                    "where": f"{v.listing.dong or '동 미상'} · 층 표기 '{v.listing.floor_raw}'",
+                    "where": f"{v.listing.dong or '동 미상'} · "
+                    + (f"층 표기 '{v.listing.floor_raw}'" if v.listing.floor_raw else "층 표기 없음"),
                     "price_text": fmt_price(v.listing.price),
                     "url": v.listing.url,
                 }
