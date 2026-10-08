@@ -39,14 +39,14 @@ def test_price_mismatch_warning() -> None:
     assert "23억" in w[0] and "23억 2,000" in w[0]
 
 
-def test_molit_only_recent_is_info_older_is_warn() -> None:
-    m = [M(date(2026, 8, 6), 230000), M(date(2026, 8, 5), 231000, floor=11), M(date(2026, 3, 1), 225000)]
+def test_molit_only_is_always_info() -> None:
+    # CLAUDE.md §9 명세 확정(실거래) ①: 기간과 상관없이 INFO. 최근 2개월이면 반영 지연 문구만 추가
+    m = [M(date(2026, 8, 6), 230000), M(date(2026, 8, 5), 231000, floor=11), M(date(2024, 10, 1), 225000)]
     w = cross_check(m, [], AS_OF)
     assert len(w) == 3
-    info = [x for x in w if x.startswith("[INFO]")]
-    warn = [x for x in w if x.startswith("[WARN]")]
-    assert len(info) == 1 and "2026-08-06" in info[0] and "반영 지연" in info[0]  # 경계: as_of-2개월 당일 포함
-    assert len(warn) == 2 and all("국토부에만 있는" in x for x in warn)
+    assert all(x.startswith("[INFO] 교차검증 국토부에만 있는 거래") for x in w)
+    lag = [x for x in w if "반영 지연" in x]
+    assert len(lag) == 1 and "2026-08-06" in lag[0]  # 경계: as_of-2개월 당일 포함
 
 
 def test_naver_only_warning() -> None:
@@ -99,3 +99,12 @@ def test_deterministic_order() -> None:
 def test_source_mixup_rejected() -> None:
     with pytest.raises(ValueError):
         cross_check([N(date(2026, 4, 1), 1)], [], AS_OF)
+
+
+def test_basement_floor_pairs_with_molit() -> None:
+    # 네이버 "B1"은 -1로 바뀌어 국토부 -1층 거래와 짝지어진다 (명세 확정 ③)
+    from app.collectors.naver_trades import parse_naver_trade_floor
+    n_floor = parse_naver_trade_floor("B1")
+    assert n_floor == -1
+    assert cross_check([M(date(2026, 9, 20), 150000, floor=-1)], [N(date(2026, 9, 20), 150000, floor=n_floor)],
+                       AS_OF) == []

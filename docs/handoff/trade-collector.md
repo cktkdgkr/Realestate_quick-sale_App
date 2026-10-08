@@ -45,11 +45,11 @@ fixture는 스킬 문서(molit-trade-api §3, naver-land-collector §2)의 필�
 | 그 밖의 resultCode 오류(예: 22 호출 한도 초과), 기타 4xx, XML 아님, totalCount보다 적게 받음 | `molit_api` |
 | 재시도 3회 후에도 연결 실패·5xx | `network` |
 | 필수 필드 누락·변환 실패 | `schema_changed` |
-| `molit_apt_seq` None, lawd_cd 형식 오류 | `complex_mapping` (요청 전에 발생) |
+| `molit_apt_seq` None·빈 문자열·공백만, lawd_cd 형식 오류 | `complex_mapping` (요청 전에 발생) |
 
 ## 3. 단지 식별
 - `Complex.molit_apt_seq`(= 응답 `aptSeq`)로만 거른다. 단지명은 비교하지 않는다 (테스트: 이름이 달라도 aptSeq가 같으면 포함, 이름이 같아도 aptSeq가 다르면 제외).
-- None이면 요청 없이 `CollectorError("complex_mapping")`. 후보는 `find_apt_seq_candidates`로 따로 얻는다.
+- None·빈 문자열·공백만이면 요청 없이 `CollectorError("complex_mapping")` (반려 1 수정). 후보는 `find_apt_seq_candidates`로 따로 얻는다.
 - 후보 `score`는 참고용(법정동 일치 +1, 주소 토큰에 지번 일치 +2, 정규화 단지명 포함 관계 +1)이며 정렬에만 쓴다. 후보가 1개여도 확정하지 않는다 → 리포트에 후보 목록과 `complexes.yaml` 수정 방법 표시(pipeline 담당).
 
 ## 4. 평형 매칭과 경고 전달 방식
@@ -63,23 +63,26 @@ fixture는 스킬 문서(molit-trade-api §3, naver-land-collector §2)의 필�
 ## 5. 네이버 실거래·교차검증
 - 요청(가정): ① `GET /api/complexes/{no}?sameAddressGroup=false` 로 `pyeongName → pyeongNo` 매핑(AreaType.type_name = pyeongName), ② 평형마다 `GET /api/complexes/{no}/prices/real?complexNo=..&tradeType=A1&areaNo={pyeongNo}&year=5&type=table`. 모두 `NaverClient.get_json`(순차·2~5초 대기·차단 감지) 경유.
 - 응답 필드(가정): `realPriceOnMonthList[].realPriceList[]` 의 `tradeType`(A1만), `tradeYear/tradeMonth/tradeDate`, `dealPrice`(만원 int, 없으면 `formattedPrice`를 parse_price), `floor`, `deleteYn`(Y → cancelled), `exclusiveArea`(없으면 AreaType 값).
+- 필수 필드 `tradeType, tradeYear, tradeMonth, tradeDate, floor`(키) 중 하나라도 없으면 `schema_changed` (명세 확정 ④).
+- 층: `parse_naver_trade_floor` — 지하 표기 `B1`/`b2`/`지하1`은 음의 정수(-1, -2), `B`·`지하`만 있으면 -1, 끝의 `층`은 뗀다. 그 밖에 정수가 아니면(`옥탑` 등) 제외하고 `NaverClient.warnings`에 건수 경고 (명세 확정 ③).
 - `cross_check` 규칙: 비교 범위는 국토부 조회 범위(as_of 달 포함 25개 월의 1일 ~ as_of), 해제 거래 제외. 키 `(단지, area_key, 계약년월, 층)`, 같은 가격끼리 먼저 짝짓고 남은 것끼리 가격 불일치로 짝짓는다. 출력은 결정적 정렬.
   | 종류 | 수준 |
   |---|---|
   | 가격 불일치 | `[WARN] 교차검증 가격 불일치` |
-  | 국토부에만 있음 | 계약일 ≥ as_of−2개월이면 `[INFO]`(네이버 반영 지연 가능), 그 이전이면 `[WARN]` |
+  | 국토부에만 있음 | 기간과 상관없이 `[INFO]` (명세 확정 ①). 계약일 ≥ as_of−2개월이면 "네이버 반영 지연 가능"을 덧붙인다 |
   | 네이버에만 있음 | `[WARN]`. 같은 키·가격의 국토부 해제 거래가 있으면 "국토부에서는 해제 거래"로 표시 |
 - 판정에는 국토부 Trade만 쓴다 (cross_check는 판정에 영향 없음).
 
 ## 6. 비밀값
-- 키는 생성자 인자로만 받는다(환경변수 읽기는 config 담당). 예외·로그 메시지는 `mask_secrets`로 `serviceKey=***` 처리하고 키 원문·URL 인코딩형도 지운다. httpx/httpcore 로거에 마스킹 필터를 붙여 httpx INFO 요청 로그의 키도 가린다. `repr(MolitClient)`에 키 없음. fixture에 키 없음(테스트로 검사).
+- 키는 생성자 인자로만 받는다(환경변수 읽기는 config 담당). 예외·로그 메시지는 `mask_secrets`로 `serviceKey=***` 처리하고 키 원문·URL 인코딩형(대소문자 무관)도 지운다. 응답 본문은 파싱 전에 통째로 가린다. 오류 메시지를 80자로 자를 때 키 일부가 남지 않게 하려는 것이다(반려 2 수정). httpx/httpcore 로거에 마스킹 필터를 붙여 httpx INFO 요청 로그의 키도 가린다. `repr(MolitClient)`에 키 없음. fixture에 키 없음(테스트로 검사).
 
 ## 7. 가정·알려진 한계
 - 실거래 신고 기한은 계약 후 30일 → 최근 거래가 늦게 나타난다. 해제 신고도 나중에 반영되어 주마다 기준가가 달라질 수 있다.
 - 응답 형식(XML 여부, 필드명, resultCode 값 `000`/`00`, 게이트웨이 오류 형식)은 미확인. 네이버 실거래 엔드포인트·`areaNo`=pyeongNo 가정·페이지네이션 유무(`addedRowCount` 등)도 미확인.
 - 네이버 실거래 수집은 단지 정보를 한 번 더 요청한다(pyeongNo를 얻기 위해, §5 스키마에 pyeongNo 없음). 요청 1회/단지 추가.
-- 국토부에만 있는 오래된 거래도 `[WARN]`으로 낸다 — 네이버가 5년치를 다 주지 않으면 경고가 많을 수 있다. 4단계에서 확인 후 조정.
-- `area_types`가 비어 있으면 요청 없이 빈 목록(경고 없음, mapping 검증은 수행).
+- resultCode `03`(NO_DATA)은 4단계 확인 전까지 오류(`molit_api`)로 처리한다 (명세 확정 ②).
+- 36평 초과 판별 근사(max(area_key)+0.5)의 타당성은 4단계 C8에서 확인한다 (명세 확정 ⑤).
+- `area_types`가 비어 있으면 `fetch_trades`·`fetch_naver_trades` 모두 **요청 없이** 빈 목록을 돌려준다(경고 없음). `fetch_trades`는 그 전에 molit_apt_seq·lawd_cd 검증을 먼저 한다.
 
 ## 8. 매칭 실패 사례 (합성 fixture 기준)
 - 전용 72.30㎡ (59.99·84.97 어느 쪽과도 0.5 초과) → 경고 후 제외.

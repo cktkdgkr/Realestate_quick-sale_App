@@ -67,8 +67,8 @@ def test_fetch_naver_trades_parses_and_maps_area() -> None:
     c = next(t for t in big if t.contract_date == date(2026, 9, 10))
     assert c.cancelled is True and c.price == 238000 and c.floor_group == "NORMAL"
     small = [t for t in trades if t.area_key == 59.99]
-    # "B1" 층은 숫자가 아니라 제외+경고, tradeType B1(전세)은 조용히 제외
-    assert [(t.floor, t.floor_group, t.price) for t in small] == [(2, "LOW", 170000)]
+    # "B1" 층은 -1(LOW)로 변환, "옥탑"은 정수가 아니라 제외+경고, tradeType B1(전세)은 조용히 제외
+    assert [(t.floor, t.floor_group, t.price) for t in small] == [(2, "LOW", 170000), (-1, "LOW", 150000)]  # 계약일순
     assert any("층 값 오류 1건" in w for w in client.warnings)
 
 
@@ -112,3 +112,22 @@ def test_or_warning_success_passthrough() -> None:
 def test_naver_trade_fixtures_marked_synthetic() -> None:
     for p in FIX.glob("trades_*.json"):
         assert json.loads(p.read_text(encoding="utf-8"))["_meta"]["synthetic"] is True, p.name
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("B1", -1), ("b2", -2), ("지하1", -1), ("지하 2", -2), ("B", -1), ("지하", -1),
+    (5, 5), ("12", 12), ("3층", 3), (" 7 ", 7), ("옥탑", None), ("", None), (None, None),
+])
+def test_parse_naver_trade_floor(raw, expected) -> None:
+    from app.collectors.naver_trades import parse_naver_trade_floor
+    assert parse_naver_trade_floor(raw) == expected
+
+
+@pytest.mark.parametrize("missing", ["tradeType", "tradeYear", "tradeMonth", "tradeDate", "floor"])
+def test_missing_required_item_field_is_schema_changed(missing: str) -> None:
+    data = json.loads(_load("trades_real_3009_area2_synthetic.json"))
+    del data["realPriceOnMonthList"][0]["realPriceList"][0][missing]
+    fake = FakeNaver(real={"1": _load("trades_real_3009_area1_synthetic.json"), "2": json.dumps(data)})
+    with pytest.raises(CollectorError) as ei:
+        fetch_naver_trades(_client(fake), CX, AREAS)
+    assert ei.value.stage == "schema_changed" and missing in ei.value.detail

@@ -154,10 +154,11 @@ def test_filters_by_apt_seq_only_not_name() -> None:
     assert [t.price for t in other] == [300000]  # 이름이 같아도 aptSeq가 다르면 제외
 
 
-def test_missing_apt_seq_raises_complex_mapping_without_request() -> None:
+@pytest.mark.parametrize("seq", [None, "", "   ", "\t\n"])
+def test_missing_apt_seq_raises_complex_mapping_without_request(seq: str | None) -> None:
     fake = FakeMolit(_default_pages())
     with pytest.raises(CollectorError) as ei:
-        fetch_trades(_client(fake), _complex(None), AREAS, AS_OF)
+        fetch_trades(_client(fake), _complex(seq), AREAS, AS_OF)
     assert ei.value.stage == "complex_mapping" and ei.value.complex_no == "3009"
     assert fake.calls == []
 
@@ -199,10 +200,13 @@ def test_area_boundary_half_m2() -> None:
     assert any(t.exclusive_m2 == 72.30 and t.area_key == 72.80 for t in trades)
 
 
-def test_empty_area_types_returns_no_trades_without_warning() -> None:
-    client = _client(FakeMolit(_default_pages()))
+def test_empty_area_types_returns_no_trades_without_request_or_warning() -> None:
+    fake = FakeMolit(_default_pages())
+    client = _client(fake)
     assert fetch_trades(client, _complex(), [], AS_OF) == []
-    assert client.warnings == []
+    assert client.warnings == [] and fake.calls == []
+    with pytest.raises(CollectorError):  # 매핑 검증은 평형 유무와 상관없이 먼저 한다
+        fetch_trades(client, _complex("  "), [], AS_OF)
 
 
 # ------------------------------------------------------------ 오류 처리·비밀값
@@ -303,3 +307,33 @@ def test_close_does_not_close_injected_http() -> None:
     with MolitClient(FAKE_KEY, http=http, sleep=lambda s: None) as c:
         fetch_trades(c, _complex(), AREAS, AS_OF)
     assert not http.is_closed
+
+
+RAW_KEY = "RAWkey+/=Zq9secretVALUE=="
+
+
+@pytest.mark.parametrize(
+    "body,stage",
+    [
+        # (a) HTTP 200, XML 아닌 본문에 키 원문이 그대로 되돌아옴 (80자 자르기 전에 가려야 함)
+        ("INVALID_REQUEST_PARAMETER_ERROR key " + RAW_KEY, "molit_api"),
+        # (b) 게이트웨이 XML returnAuthMsg에 키
+        ("<OpenAPI_ServiceResponse><cmmMsgHeader><errMsg>SERVICE ERROR</errMsg>"
+         "<returnAuthMsg>UNREGISTERED KEY " + RAW_KEY + "</returnAuthMsg>"
+         "<returnReasonCode>30</returnReasonCode></cmmMsgHeader></OpenAPI_ServiceResponse>", "molit_auth"),
+        # (c) resultCode 30, resultMsg에 키
+        ("<response><header><resultCode>30</resultCode><resultMsg>bad key " + RAW_KEY
+         + "</resultMsg></header></response>", "molit_auth"),
+        # (d) URL 인코딩형(소문자 %xx 포함)이 되돌아옴
+        ("<response><header><resultCode>99</resultCode><resultMsg>echo "
+         + "RAWkey%2b%2f%3dZq9secretVALUE%3d%3d</resultMsg></header></response>", "molit_api"),
+    ],
+)
+def test_key_echoed_in_error_body_is_masked(body: str, stage: str, caplog: pytest.LogCaptureFixture) -> None:
+    http = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, text=body)))
+    client = MolitClient(RAW_KEY, http=http, sleep=lambda s: None)
+    with caplog.at_level(logging.DEBUG), pytest.raises(CollectorError) as ei:
+        fetch_trades(client, _complex(), AREAS, AS_OF)
+    assert ei.value.stage == stage
+    for text in (str(ei.value), ei.value.detail, repr(ei.value.args), caplog.text):
+        assert "Zq9secret" not in text

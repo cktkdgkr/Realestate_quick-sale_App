@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections import defaultdict
 from datetime import date
 from typing import TYPE_CHECKING, Any
@@ -26,7 +27,7 @@ log = logging.getLogger(__name__)
 
 TRADE_TYPE_SALE = "A1"
 REAL_PRICE_YEARS = 5
-RECENT_MONTHS_INFO = 2      # 국토부에만 있는 거래가 이 기간 안이면 네이버 반영 지연 가능 → INFO
+RECENT_MONTHS_INFO = 2      # 국토부에만 있는 거래가 이 기간 안이면 "네이버 반영 지연 가능" 문구 추가
 WINDOW_MONTHS = 25          # 국토부 조회 범위와 같게 (실행월 포함 25개 월)
 
 
@@ -54,9 +55,35 @@ def _area_numbers(client: NaverClient, complex: Complex, area_types: list[AreaTy
     return out
 
 
+_BASEMENT_RE = re.compile(r"^(?:B|b|지하)(\d*)$")
+
+
+def parse_naver_trade_floor(raw: Any) -> int | None:
+    """네이버 실거래 층 → 정수. 지하 표기("B1", "지하1")는 음의 정수(-1)로 바꿔 국토부와 짝짓는다.
+
+    "B"/"지하"처럼 숫자가 없으면 -1. 그 밖에 정수로 못 바꾸면 None (호출부에서 경고 후 제외).
+    """
+    if raw is None or isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        return raw
+    s = re.sub(r"\s+", "", str(raw)).removesuffix("층")
+    m = _BASEMENT_RE.match(s)
+    if m:
+        return -int(m.group(1) or 1)
+    try:
+        return int(s)
+    except ValueError:
+        return None
+
+
 def _parse_item(it: dict, at: AreaType, cno: str) -> Trade | None:
     """realPriceList 항목 → Trade. 매매가 아니면 None. 층이 숫자가 아니면 None(호출부에서 경고)."""
-    if str(it.get("tradeType", TRADE_TYPE_SALE)) != TRADE_TYPE_SALE:
+    for f in ("tradeType", "tradeYear", "tradeMonth", "tradeDate"):
+        _require(it, f, "거래", cno)
+    if "floor" not in it:
+        raise CollectorError("schema_changed", "네이버 실거래 거래에 필수 필드 'floor' 없음", cno)
+    if str(it["tradeType"]) != TRADE_TYPE_SALE:
         return None
     try:
         y = int(_require(it, "tradeYear", "거래", cno))
@@ -73,9 +100,8 @@ def _parse_item(it: dict, at: AreaType, cno: str) -> Trade | None:
             else nz.parse_price(str(raw_price))
     except ValueError:
         raise CollectorError("schema_changed", f"네이버 실거래 가격 변환 실패: {raw_price!r}", cno) from None
-    try:
-        floor = int(str(it.get("floor", "")).strip())
-    except ValueError:
+    floor = parse_naver_trade_floor(it.get("floor"))
+    if floor is None:
         return None
     group = nz.classify_floor(floor)
     excl_raw = it.get("exclusiveArea")
@@ -117,7 +143,7 @@ def fetch_naver_trades(client: NaverClient, complex: Complex, area_types: list[A
             for it in items:
                 t = _parse_item(it, at, cno)
                 if t is None:
-                    if str(it.get("tradeType", TRADE_TYPE_SALE)) == TRADE_TYPE_SALE:
+                    if str(it["tradeType"]) == TRADE_TYPE_SALE:
                         bad_floor += 1
                     continue
                 trades.append(t)
@@ -168,7 +194,7 @@ def cross_check(molit: list[Trade], naver: list[Trade], as_of: date) -> list[str
     비교 범위: 국토부 조회 범위(as_of 달 포함 25개 월의 첫날 ~ as_of), 해제 거래 제외.
     짝짓기 키: (단지, area_key, 계약년월, 층). 같은 키·같은 가격이면 같은 거래로 본다.
     경고 3종:
-      MOLIT_ONLY  국토부에만 있음. 계약일이 최근 2개월 이내면 [INFO](네이버 반영 지연 가능), 그 외 [WARN]
+      MOLIT_ONLY  국토부에만 있음 [INFO] (기간 무관. 최근 2개월 이내면 "네이버 반영 지연 가능" 덧붙임)
       NAVER_ONLY  네이버에만 있음 [WARN] (국토부 매칭 실패·단지 식별 오류 의심)
       PRICE_DIFF  같은 키인데 가격이 다름 [WARN]
     """
@@ -217,13 +243,10 @@ def cross_check(molit: list[Trade], naver: list[Trade], as_of: date) -> list[str
         for a, b in zip(rest_m, rest_n):
             rows.append((k, 0, f"[WARN] 교차검증 가격 불일치: {_where(k)} 국토부 {_fmt(a.price)} / "
                                f"네이버 {_fmt(b.price)} (판정은 국토부 기준)"))
-        for a in rest_m[len(rest_n):]:
-            if a.contract_date >= recent_from:
-                rows.append((k, 1, f"[INFO] 교차검증 국토부에만 있는 최근 거래: {_where(k)} {_fmt(a.price)} "
-                                   f"(계약 {a.contract_date.isoformat()}, 네이버 반영 지연 가능)"))
-            else:
-                rows.append((k, 1, f"[WARN] 교차검증 국토부에만 있는 거래: {_where(k)} {_fmt(a.price)} "
-                                   f"(계약 {a.contract_date.isoformat()})"))
+        for a in rest_m[len(rest_n):]:  # CLAUDE.md §9 명세 확정(실거래) ①: 기간과 무관하게 INFO
+            lag = ", 네이버 반영 지연 가능" if a.contract_date >= recent_from else ""
+            rows.append((k, 1, f"[INFO] 교차검증 국토부에만 있는 거래: {_where(k)} {_fmt(a.price)} "
+                               f"(계약 {a.contract_date.isoformat()}{lag})"))
         for b in rest_n[len(rest_m):]:
             note = " — 국토부에서는 해제 거래" if b.price in m_cancelled.get(k, []) else \
                 " (국토부 평형 매칭 실패 또는 단지 식별 오류 의심)"

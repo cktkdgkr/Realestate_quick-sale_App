@@ -51,9 +51,10 @@ def mask_secrets(text: str, api_key: str | None = None) -> str:
     """URL·메시지에서 serviceKey 값과 API 키 원문(및 URL 인코딩형)을 가린다."""
     out = _SERVICE_KEY_RE.sub(r"\1=***", text)
     if api_key:
-        for variant in {api_key, quote(api_key, safe=""), quote_plus(api_key)}:
+        # 긴 형태부터 가린다. 인코딩형은 %2b/%2B 대소문자 차이도 가린다 (넘치게 가려도 무방)
+        for variant in sorted({api_key, quote(api_key, safe=""), quote_plus(api_key)}, key=len, reverse=True):
             if variant:
-                out = out.replace(variant, "***")
+                out = re.sub(re.escape(variant), "***", out, flags=re.IGNORECASE)
     return out
 
 
@@ -167,7 +168,12 @@ class MolitClient:
             },
             where=f"{lawd_cd}/{deal_ymd} p{page}",
         )
-        return parse_response(text, where=f"{lawd_cd}/{deal_ymd} p{page}")
+        try:
+            # 본문을 먼저 가린다 (오류 메시지 자르기 전에 키가 잘려 일부만 남는 일을 막는다)
+            return parse_response(mask_secrets(text, self._api_key), where=f"{lawd_cd}/{deal_ymd} p{page}")
+        except CollectorError as e:
+            # 오류 응답 본문이 키를 그대로 되돌려 줄 수 있다 → 키 원문·인코딩형을 가려서 다시 올린다
+            raise CollectorError(e.stage, mask_secrets(e.detail, self._api_key), e.complex_no) from None
 
     def _request(self, params: dict[str, str], where: str) -> str:
         if self._requested_once:
@@ -276,7 +282,8 @@ def _to_trade(item: dict[str, str], complex_no: str, at: AreaType, floor: int) -
 # ---------------------------------------------------------------- 공개 함수
 def fetch_trades(client: MolitClient, complex: Complex, area_types: list[AreaType], as_of: date) -> list[Trade]:
     """단지의 25개월 매매 실거래 (해제 거래 포함). 평형 매칭 실패는 client.warnings에 기록."""
-    if not complex.molit_apt_seq:
+    seq = (complex.molit_apt_seq or "").strip()
+    if not seq:  # None·빈 문자열·공백만 → 빈 결과로 숨기지 않는다
         raise CollectorError(
             "complex_mapping",
             "molit_apt_seq 미설정: find_apt_seq_candidates로 후보를 확인해 complexes.yaml에 지정해야 한다",
@@ -285,7 +292,8 @@ def fetch_trades(client: MolitClient, complex: Complex, area_types: list[AreaTyp
     if not complex.lawd_cd or not re.fullmatch(r"\d{5}", complex.lawd_cd[:5]):
         raise CollectorError("complex_mapping", f"lawd_cd 형식 오류: {complex.lawd_cd!r}", complex.complex_no)
     lawd = complex.lawd_cd[:5]
-    seq = complex.molit_apt_seq.strip()
+    if not area_types:  # 조사 대상 평형 없음 → 요청 없이 빈 목록 (naver_trades와 같은 동작)
+        return []
     max_key = max((at.area_key for at in area_types), default=None)
 
     trades: list[Trade] = []

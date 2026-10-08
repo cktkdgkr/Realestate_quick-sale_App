@@ -43,6 +43,17 @@
           "floor": 5,
           "deleteYn": "N",
           "exclusiveArea": null
+        },
+        {
+          "tradeType": "A1",
+          "tradeYear": "2026",
+          "tradeMonth": 9,
+          "tradeDate": "25",
+          "dealPrice": 160000,
+          "formattedPrice": "",
+          "floor": "옥탑",
+          "deleteYn": "N",
+          "exclusiveArea": null
         }
       ]
     }
