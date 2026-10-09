@@ -11,7 +11,7 @@
 {%- set C_GREEN = "#03C75A" -%}
 {%- set C_RED = "#F04452" -%}
 {%- set C_WARN = "#C25E00" -%}
-{%- set CARD = "border-collapse:separate;background:#FFFFFF;border:1px solid #E5E8EB;border-radius:12px;" -%}
+{%- set CARD = "width:100%;table-layout:fixed;border-collapse:separate;background:#FFFFFF;border:1px solid #E5E8EB;border-radius:12px;" -%}
 {%- set CHIP = "display:inline-block;margin:0 4px 4px 0;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700;line-height:1.5;" -%}
 {% macro chip(text, fg, bg) %}<span style="{{ CHIP }}color:{{ fg }};background:{{ bg }};">{{ text }}</span>{% endmacro %}
 {% macro bargain_card(it) %}
@@ -36,7 +36,7 @@
       <span style="font-size:20px;font-weight:800;color:{{ C_TEXT }};letter-spacing:-0.3px;">매매 <strong>{{ it.price_text }}</strong></span>{% if it.discount_pct is not none %} <span style="font-size:15px;font-weight:800;color:{{ C_RED }};">최대 {{ it.discount_pct }}% 낮음</span>{% endif %}<br>
       {% endif %}
       <span style="font-size:13px;color:{{ C_SUB }};">{{ it.dong }} · {{ it.floor_raw }} ({{ it.floor_label }}){% if it.direction %} · {{ it.direction }}{% endif %}</span>
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;margin:10px 0 8px 0;background:#F7F8FA;border-radius:8px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;table-layout:fixed;border-collapse:separate;margin:10px 0 8px 0;background:#F7F8FA;border-radius:8px;">
         <tr><td style="padding:8px 10px;font-size:13px;line-height:1.6;color:{{ C_SUB }};">
           {% for r in it.reasons %}
           <span style="display:block;">근거: {{ r }}</span>
@@ -64,11 +64,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ v.title }}</title>
 </head>
-<body style="margin:0;padding:0;background:#F5F6F8;font-family:-apple-system,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;color:{{ C_TEXT }};-webkit-text-size-adjust:100%;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#F5F6F8;">
+<body style="margin:0;padding:0;background:#F5F6F8;font-family:-apple-system,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;color:{{ C_TEXT }};-webkit-text-size-adjust:100%;overflow-wrap:anywhere;word-break:break-word;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;background:#F5F6F8;">
 <tr><td align="center" style="padding:16px 10px 24px 10px;">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;max-width:600px;">
-<tr><td style="padding:0;text-align:left;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;max-width:600px;table-layout:fixed;">
+<tr><td style="padding:0;text-align:left;overflow-wrap:anywhere;word-break:break-word;">
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{{ CARD }}margin:0 0 12px 0;border-top:4px solid {{ C_GREEN }};">
 <tr><td style="padding:18px 16px 16px 16px;">
@@ -79,7 +79,7 @@
 
 <!-- 1. 요약 박스 -->
 {% if v.has_failure %}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;margin:0 0 12px 0;background:#FFF0F1;border:1px solid #F04452;border-left:6px solid #F04452;border-radius:12px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;table-layout:fixed;border-collapse:separate;margin:0 0 12px 0;background:#FFF0F1;border:1px solid #F04452;border-left:6px solid #F04452;border-radius:12px;">
 <tr><td style="padding:14px 16px;font-size:14px;line-height:1.65;color:#B4122A;">
   <strong style="font-size:17px;color:#D91A3C;">수집 실패</strong>
   {% if v.status == "FAILED" %}— 이번 실행은 수집에 실패해 급매 판정을 하지 못했습니다. "급매 없음"이 아닙니다.{% else %}— 아래 단지·평형은 이번 주 판정에서 빠졌습니다. "급매 없음"이 아닙니다.{% endif %}
@@ -90,7 +90,7 @@
 {% endif %}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{{ CARD }}margin:0 0 12px 0;">
 <tr><td style="padding:14px 8px 6px 8px;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;table-layout:fixed;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;table-layout:fixed;">
   <tr>
     <td align="center" width="25%" style="padding:4px 2px;">
       <div style="font-size:26px;font-weight:800;line-height:1.2;color:{% if v.counts.NEW %}{{ C_GREEN }}{% else %}{{ C_TEXT }}{% endif %};">{{ v.counts.NEW }}</div>
@@ -118,7 +118,7 @@
 </td></tr>
 {% if v.no_target_rows or v.molit_missing or v.no_trade_areas or v.unknown_total %}
 <tr><td style="padding:0 12px 12px 12px;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;background:#FFF4E5;border-radius:8px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;table-layout:fixed;border-collapse:separate;background:#FFF4E5;border-radius:8px;">
   <tr><td style="padding:10px 12px;font-size:13px;line-height:1.7;color:{{ C_WARN }};font-weight:700;">
   {%- for r in v.no_target_rows %}<span style="display:block;">대상 평형 없음: {{ r.name }}({{ r.complex_no }}) — 공급 119.0㎡ 이하 평형이 없어 판정하지 않았습니다</span>{% endfor %}
   {%- if v.molit_missing %}<span style="display:block;">실거래 매칭 확인 필요: {% for r in v.molit_missing %}{{ r.name }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
@@ -150,7 +150,7 @@
 <tr><td style="padding:12px 16px;{% if not loop.last %}border-bottom:1px solid {{ C_LINE }};{% endif %}font-size:13px;line-height:1.6;color:{{ C_SUB }};">
   <span style="font-size:14px;font-weight:700;color:{{ C_TEXT }};">{{ g.complex_name }}</span> {{ g.area_label }}{% if g.where %} · {{ g.where }}{% endif %}<br>
   {{ g.reason_text }} · 마지막 알림가 <span style="color:{{ C_TEXT }};font-weight:700;">{{ g.last_price_text }}</span>{% if g.current_price_text %} → 현재 <span style="color:{{ C_TEXT }};font-weight:700;">{{ g.current_price_text }}</span>{% endif %}{% if g.first_alerted %} · 최초 알림 {{ g.first_alerted }}{% endif %}
-  {% if g.url %}<br><a href="{{ g.url }}" style="color:{{ C_GREEN }};font-weight:700;text-decoration:none;">네이버 매물 보기</a><span style="color:{{ C_GREEN }};font-weight:700;"> ›</span>{% else %}<br><span style="color:{{ C_MUTED }};font-size:11px;">식별: {{ g.dedup_key }}</span>{% endif %}
+  {% if g.url %}<br><a href="{{ g.url }}" style="color:{{ C_GREEN }};font-weight:700;text-decoration:none;">네이버 매물 보기</a><span style="color:{{ C_GREEN }};font-weight:700;"> ›</span>{% else %}<br><span style="color:{{ C_MUTED }};font-size:11px;word-break:break-all;">식별: {{ g.dedup_key }}</span>{% endif %}
 </td></tr>
 {% endfor %}
 </table>
@@ -169,39 +169,39 @@
 <div style="margin:0 0 8px 0;padding:10px 12px;background:#FFF4E5;border-left:4px solid #FF9F1A;border-radius:6px;font-size:13px;line-height:1.6;color:{{ C_SUB }};">
   <strong style="color:{{ C_WARN }};">실거래 매칭 확인 필요</strong> — 국토부 단지 식별자(molit_apt_seq)가 없어 이 단지의 실거래를 쓰지 못했습니다.<br>
   {% if r.candidates %}후보:
-  {% for c in r.candidates %}<br>· <code style="font-family:Menlo,Consolas,monospace;font-size:12px;background:#FFFFFF;padding:1px 4px;border-radius:4px;color:{{ C_TEXT }};">{{ c.seq if c.seq else "(식별자 없음)" }}</code>{% if c.desc %} {{ c.desc }}{% endif %}{% endfor %}
+  {% for c in r.candidates %}<br>· <code style="word-break:break-all;font-family:Menlo,Consolas,monospace;font-size:12px;background:#FFFFFF;padding:1px 4px;border-radius:4px;color:{{ C_TEXT }};">{{ c.seq if c.seq else "(식별자 없음)" }}</code>{% if c.desc %} {{ c.desc }}{% endif %}{% endfor %}
   {% else %}후보를 찾지 못했습니다. 국토부 실거래가 공개시스템에서 단지를 직접 확인하세요.{% endif %}
   <br>해결 방법: {{ v.complexes_file }}의 이 단지 항목에 아래처럼 적고 다음 실행을 기다리세요.
-  <pre style="margin:6px 0 4px 0;padding:8px;background:#FFFFFF;border:1px solid {{ C_LINE }};border-radius:6px;font-size:12px;white-space:pre-wrap;color:{{ C_TEXT }};">  - complex_no: "{{ r.complex_no }}"
+  <pre style="margin:6px 0 4px 0;padding:8px;background:#FFFFFF;border:1px solid {{ C_LINE }};border-radius:6px;font-size:12px;white-space:pre-wrap;word-break:break-all;overflow-wrap:anywhere;color:{{ C_TEXT }};">  - complex_no: "{{ r.complex_no }}"
     name: {{ r.name }}
     molit_apt_seq: "{{ r.candidates[0].seq if r.candidates|length == 1 and r.candidates[0].seq else "위 후보 중 맞는 식별자" }}"</pre>
   {% if r.candidates|length > 1 %}<span style="font-size:12px;">후보가 여럿입니다. 주소·지번을 네이버 단지 정보와 맞춰 보고 하나를 고르세요.</span>{% endif %}
 </div>
 {% endif %}
 {% if r.areas %}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;color:{{ C_TEXT }};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;table-layout:fixed;border-collapse:collapse;font-size:12px;line-height:1.45;color:{{ C_TEXT }};">
 <tr>
-  <th align="left" style="padding:6px 4px;border-bottom:1px solid {{ C_LINE }};font-size:12px;font-weight:normal;color:{{ C_MUTED }};">평형</th>
-  <th align="right" style="padding:6px 4px;border-bottom:1px solid {{ C_LINE }};font-size:12px;font-weight:normal;color:{{ C_MUTED }};">일반층 실거래 중앙값</th>
-  <th align="right" style="padding:6px 4px;border-bottom:1px solid {{ C_LINE }};font-size:12px;font-weight:normal;color:{{ C_MUTED }};">일반층 매물 최저</th>
-  <th align="right" style="padding:6px 4px;border-bottom:1px solid {{ C_LINE }};font-size:12px;font-weight:normal;color:{{ C_MUTED }};">저층 매물 최저</th>
-  <th align="right" style="padding:6px 4px;border-bottom:1px solid {{ C_LINE }};font-size:12px;font-weight:normal;color:{{ C_MUTED }};">매물</th>
+  <th align="left" width="22%" style="padding:6px 3px;border-bottom:1px solid {{ C_LINE }};font-size:11px;font-weight:normal;color:{{ C_MUTED }};">평형</th>
+  <th align="right" width="26%" style="padding:6px 3px;border-bottom:1px solid {{ C_LINE }};font-size:11px;font-weight:normal;color:{{ C_MUTED }};">일반층 실거래 중앙값</th>
+  <th align="right" width="18%" style="padding:6px 3px;border-bottom:1px solid {{ C_LINE }};font-size:11px;font-weight:normal;color:{{ C_MUTED }};">일반층 매물 최저</th>
+  <th align="right" width="18%" style="padding:6px 3px;border-bottom:1px solid {{ C_LINE }};font-size:11px;font-weight:normal;color:{{ C_MUTED }};">저층 매물 최저</th>
+  <th align="right" width="16%" style="padding:6px 3px;border-bottom:1px solid {{ C_LINE }};font-size:11px;font-weight:normal;color:{{ C_MUTED }};">매물</th>
 </tr>
 {% for a in r.areas %}
 {%- set bl = "" if loop.last else "border-bottom:1px solid #F2F4F6;" %}
 <tr>
-  <td style="padding:8px 4px;{{ bl }}font-weight:700;">{{ a.label }}</td>
+  <td style="padding:8px 3px;{{ bl }}font-weight:700;">{{ a.label }}</td>
   {% if a.failed %}
-  <td colspan="4" style="padding:8px 4px;{{ bl }}color:#D91A3C;font-weight:bold;">수집 실패 — {{ a.failure_text }}</td>
+  <td colspan="4" style="padding:8px 3px;{{ bl }}color:#D91A3C;font-weight:bold;">수집 실패 — {{ a.failure_text }}</td>
   {% elif r.failed and a.missing %}
-  <td colspan="4" style="padding:8px 4px;{{ bl }}color:#D91A3C;font-weight:bold;">수집 실패</td>
+  <td colspan="4" style="padding:8px 3px;{{ bl }}color:#D91A3C;font-weight:bold;">수집 실패</td>
   {% elif a.missing %}
-  <td colspan="4" style="padding:8px 4px;{{ bl }}color:{{ C_WARN }};font-weight:bold;">결과 없음 (확인 필요)</td>
+  <td colspan="4" style="padding:8px 3px;{{ bl }}color:{{ C_WARN }};font-weight:bold;">결과 없음 (확인 필요)</td>
   {% else %}
-  <td align="right" style="padding:8px 4px;{{ bl }}">{% if a.no_trade %}<strong style="color:{{ C_WARN }};">실거래 부족</strong>{% else %}{{ a.t_normal_text }} <span style="color:{{ C_MUTED }};">({{ a.trade_count }}건{% if a.short %}, <span style="color:{{ C_WARN }};font-weight:700;">표본 부족</span>{% endif %})</span>{% endif %}{% if a.low_trade_ref %}<br><span style="color:{{ C_MUTED }};font-size:12px;">저층 실거래(참고) {{ a.low_trade_ref }}</span>{% endif %}</td>
-  <td align="right" style="padding:8px 4px;{{ bl }}">{{ a.l_normal_text }}</td>
-  <td align="right" style="padding:8px 4px;{{ bl }}">{{ a.l_low_text }}</td>
-  <td align="right" style="padding:8px 4px;{{ bl }}">{{ a.listing_count }}건{% if a.unknown_count %}<br><strong style="color:{{ C_WARN }};">층 미상 {{ a.unknown_count }}건</strong>{% endif %}</td>
+  <td align="right" style="padding:8px 3px;{{ bl }}">{% if a.no_trade %}<strong style="color:{{ C_WARN }};">실거래 부족</strong>{% else %}{{ a.t_normal_text }} <span style="color:{{ C_MUTED }};">({{ a.trade_count }}건{% if a.short %}, <span style="color:{{ C_WARN }};font-weight:700;">표본 부족</span>{% endif %})</span>{% endif %}{% if a.low_trade_ref %}<br><span style="color:{{ C_MUTED }};font-size:12px;">저층 실거래(참고) {{ a.low_trade_ref }}</span>{% endif %}</td>
+  <td align="right" style="padding:8px 3px;{{ bl }}">{{ a.l_normal_text }}</td>
+  <td align="right" style="padding:8px 3px;{{ bl }}">{{ a.l_low_text }}</td>
+  <td align="right" style="padding:8px 3px;{{ bl }}">{{ a.listing_count }}건{% if a.unknown_count %}<br><strong style="color:{{ C_WARN }};">층 미상 {{ a.unknown_count }}건</strong>{% endif %}</td>
   {% endif %}
 </tr>
 {% endfor %}
@@ -211,7 +211,7 @@
 {% endif %}
 {% if r.unknown_listings %}
 <p style="font-size:12px;margin:12px 0 4px 0;color:{{ C_WARN }};font-weight:bold;">층 미상 매물 (판정 제외)</p>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:12px;color:{{ C_SUB }};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;table-layout:fixed;border-collapse:collapse;font-size:12px;color:{{ C_SUB }};word-break:break-all;">
 {% for u in r.unknown_listings %}
 <tr><td style="padding:6px 4px;border-top:1px solid #F2F4F6;">{{ u.area_label }} · {{ u.where }} · {{ u.price_text }} · <a href="{{ u.url }}" style="color:{{ C_GREEN }};font-weight:700;text-decoration:none;">보기</a></td></tr>
 {% endfor %}
@@ -228,15 +228,15 @@
 <tr><td style="padding:14px 16px;">
 {% if v.errors %}
 <p style="font-size:13px;margin:0 0 6px 0;padding:6px 10px;background:#FFF0F1;border-radius:6px;font-weight:bold;color:#D91A3C;">수집 오류</p>
-<ul style="margin:0 0 10px 0;padding-left:18px;font-size:12px;line-height:1.6;color:{{ C_SUB }};">{% for e in v.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+<ul style="margin:0 0 10px 0;padding-left:18px;font-size:12px;line-height:1.6;word-break:break-all;color:{{ C_SUB }};">{% for e in v.errors %}<li>{{ e }}</li>{% endfor %}</ul>
 {% endif %}
 {% if v.collector_warnings %}
 <p style="font-size:13px;margin:0 0 6px 0;padding:6px 10px;background:#FFF4E5;border-radius:6px;font-weight:bold;color:{{ C_WARN }};">수집 경고</p>
-<ul style="margin:0 0 10px 0;padding-left:18px;font-size:12px;line-height:1.6;color:{{ C_SUB }};">{% for w in v.collector_warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+<ul style="margin:0 0 10px 0;padding-left:18px;font-size:12px;line-height:1.6;word-break:break-all;color:{{ C_SUB }};">{% for w in v.collector_warnings %}<li>{{ w }}</li>{% endfor %}</ul>
 {% endif %}
 {% if v.warnings %}
 <p style="font-size:13px;margin:0 0 6px 0;padding:6px 10px;background:#FFF4E5;border-radius:6px;font-weight:bold;color:{{ C_WARN }};">교차검증 경고 (국토부 기준으로 판정)</p>
-<ul style="margin:0 0 4px 0;padding-left:18px;font-size:12px;line-height:1.6;color:{{ C_SUB }};">{% for w in v.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+<ul style="margin:0 0 4px 0;padding-left:18px;font-size:12px;line-height:1.6;word-break:break-all;color:{{ C_SUB }};">{% for w in v.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
 {% endif %}
 </td></tr>
 </table>
