@@ -66,6 +66,10 @@ def render_summary(run: RunResult, context: dict) -> str:
     out.append("")
 
     checks: list[str] = []
+    for r in v["no_target_rows"]:
+        checks.append(
+            f"- 대상 평형 없음: {r['name']}({r['complex_no']}) — 공급 119.0㎡ 이하 평형이 없어 판정하지 않았습니다."
+        )
     for r in v["molit_missing"]:
         checks.append(
             f"- 실거래 매칭 확인 필요: {r['name']}({r['complex_no']}) — "

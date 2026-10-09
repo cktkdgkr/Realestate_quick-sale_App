@@ -377,3 +377,34 @@ def test_area_failure_marks_whole_complex_failed(sample):
     assert "수집 실패 1단지" in line
     html = render_report(run, c)
     assert "<strong>수집 실패</strong> — 32평 105 (전용 84.69㎡) — 네이버 응답 형식 변경 의심" in html
+
+
+# ---------------------------------------------------------------- 대상 평형 0개 단지 (CLAUDE.md §9 2026-10-09 ①)
+
+def test_zero_target_areas_flagged_not_failure(sample):
+    run, _, _ = sample
+    cx = [S.Complex("111", "단지1", "11710", "주소", 20, "x"), S.Complex("222", "단지2", "11710", "주소", 20, "y")]
+    ats = {"111": [S.AreaType("111", 84.97, 84.97, 112.0, 34, "112")], "222": []}
+    summ = {("111", 84.97): dict(t_normal=100000, trade_sample_count=3, trade_sample_short=False,
+                                 l_normal_min=None, l_low_min=None, listing_count=0, unknown_count=0)}
+    run = RunResult("r", run.started_at, "OK", [], [], [])
+    c = dict(complexes=cx, area_types=ats, area_summaries=summ, gone=[], failures=[])
+    text = render_summary(run, c)
+    assert text.splitlines()[0].endswith("상태 OK · 신규 0 · 인하 0 · 지속 0 · 수집 실패 없음")  # 실패 아님
+    checks = text.split("## 확인 필요")[1]
+    assert "- 대상 평형 없음: 단지2(222) — 공급 119.0㎡ 이하 평형이 없어 판정하지 않았습니다." in checks
+    assert "단지1(111)" not in checks
+    html = render_report(run, c)
+    assert "대상 평형 없음: 단지2(222)" in html
+    assert "조사 대상 평형(공급 119.0㎡ 이하)이 없습니다" in html
+
+
+def test_zero_target_areas_with_failure_shows_failure_only(sample):
+    run, _, _ = sample
+    c = dict(complexes=[S.Complex("222", "단지2", "11710", "주소", 20, "y")], area_types={"222": []},
+             area_summaries={}, gone=[], failures=[{"complex_no": "222", "stage": "network"}])
+    run = RunResult("r", run.started_at, "PARTIAL", [], [], [])
+    text, html = render_summary(run, c), render_report(run, c)
+    assert "대상 평형 없음" not in text and "대상 평형 없음" not in html
+    assert "조사 대상 평형(공급 119.0㎡ 이하)이 없습니다" not in html
+    assert "- 단지2(222): 수집 실패 — 네트워크 오류." in text

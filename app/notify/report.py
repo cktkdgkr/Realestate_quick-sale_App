@@ -369,6 +369,8 @@ def build_view(run: RunResult, context: Mapping) -> dict:
     unknown_total = sum(a["unknown_count"] for r in status_rows for a in r["areas"])
     molit_missing = [r for r in status_rows if r["molit_missing"]]
     failed_rows = [r for r in status_rows if r["failed"]]
+    # CLAUDE.md §9 (2026-10-09 ①): 대상 평형 0개 단지는 실패가 아니지만 "확인 필요"에 따로 표시한다.
+    no_target_rows = [r for r in status_rows if not r["areas"] and not r["failed"]]
 
     return {
         "title": build_title(run, context),
@@ -384,6 +386,7 @@ def build_view(run: RunResult, context: Mapping) -> dict:
         "gone": gone,
         "status_rows": status_rows,
         "failed_rows": failed_rows,
+        "no_target_rows": no_target_rows,
         "has_failure": bool(failed) or run.status != "OK",
         "no_trade_areas": no_trade_areas,
         "unknown_total": unknown_total,

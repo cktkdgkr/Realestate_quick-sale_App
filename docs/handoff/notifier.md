@@ -82,6 +82,7 @@ commit_history(session, run.verdicts, failed, run_id, dry_run=dry_run, target_co
   - status가 OK가 아닌데 failures가 비어 있으면 `[수집 실패 있음]`과 `수집 오류 있음`을 표시한다.
 - 리포트 본문 순서는 notify 스킬 §4의 1~7이며 웹 링크는 뺐다. 수집 실패 배너는 1번 요약 박스의 맨 위에 둔다.
   수집 실패가 있으면 "알림 없음" 문구를 "수집에 성공한 단지에서는 … 수집 실패 단지는 확인하지 못했습니다"로 바꾼다. FAILED이면 "급매를 확인하지 못했습니다"로 쓴다.
+- 대상 평형(공급 119.0㎡ 이하)이 0개이고 failures도 없는 단지는 실패가 아니라서 status를 바꾸지 않는다 (CLAUDE.md §9 2026-10-09 ①). 대신 summary의 `## 확인 필요`와 리포트 요약 박스에 `대상 평형 없음: 단지명(번호) — 공급 119.0㎡ 이하 평형이 없어 판정하지 않았습니다`를 표시하고, 현황표에는 "조사 대상 평형이 없습니다"를 표시한다. 그 단지에 failures가 있으면 수집 실패로만 표시한다.
 - 판정 근거 문구는 bargain-rules §7 그대로다. 근거별 할인율은 `pct_below`로 계산하며, rules의 `discount_pct`와 같은 정수 ROUND_HALF_UP을 쓴다 (§9 rules ④, 테스트로 일치 확인).
 - 가격은 `normalize.format_price`로 표시한다. §7 문구 안의 기준가만 `{base:,}만원` 형식이다.
 - 오류·경고 문자열에 있는 `serviceKey`/`api_key`/`token`/`password` 파라미터 값은 `***`로 가린다.
