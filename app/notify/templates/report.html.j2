@@ -52,8 +52,7 @@
   <strong style="font-size:16px;color:#d1242f;">수집 실패</strong>
   {% if v.status == "FAILED" %}— 이번 실행은 수집에 실패해 급매 판정을 하지 못했습니다. "급매 없음"이 아닙니다.{% else %}— 아래 단지·평형은 이번 주 판정에서 빠졌습니다. "급매 없음"이 아닙니다.{% endif %}
   {% for r in v.failed_rows %}<br>· <strong>{{ r.name }}</strong> ({{ r.complex_no }}): {{ r.failure_text }}{% endfor %}
-  {% for r, a in v.area_fail_rows %}<br>· <strong>{{ r.name }}</strong> {{ a.label }}: {{ a.failure_text }}{% endfor %}
-  {% if not v.failed_rows and not v.area_fail_rows and v.status != "FAILED" %}<br>· 일부 수집 오류가 있습니다. 6번 "수집 오류"를 확인하세요.{% endif %}
+  {% if not v.failed_rows and v.status != "FAILED" %}<br>· 일부 수집 오류가 있습니다. 6번 "수집 오류"를 확인하세요.{% endif %}
 </td></tr>
 </table>
 {% endif %}

@@ -35,14 +35,13 @@ def render_summary(run: RunResult, context: dict) -> str:
         out.append("## 수집 실패")
         if v["status"] == "FAILED":
             out.append("- 이번 실행은 수집에 실패해 급매 판정을 하지 못했습니다. \"급매 없음\"이 아닙니다.")
+        # 실패 단위는 단지다 (CLAUDE.md §9). 실패 항목마다 단지 이름과(있으면) 평형을 적는다.
         for r in v["failed_rows"]:
-            out.append(
-                f"- {r['name']}({r['complex_no']}): 수집 실패 — {r['failure_text']}. "
-                "이 단지는 이번 주 판정에서 빠졌습니다 (\"급매 없음\" 아님)."
-            )
-        for r, a in v["area_fail_rows"]:
-            out.append(f"- {r['name']} {a['label']}: 수집 실패 — {a['failure_text']}")
-        if not v["failed_rows"] and not v["area_fail_rows"] and v["status"] != "FAILED":
+            for f in r["failure_items"]:
+                where = f"{r['name']} {f['area_label']}" if f["area_label"] else f"{r['name']}({r['complex_no']})"
+                out.append(f"- {where}: 수집 실패 — {f['text']}.")
+            out.append(f"  → {r['name']}은(는) 이번 주 판정에서 빠졌습니다 (\"급매 없음\" 아님).")
+        if not v["failed_rows"] and v["status"] != "FAILED":
             out.append("- 일부 수집 오류가 있습니다. 아래 오류 목록과 리포트를 확인하세요.")
         out.append("")
 

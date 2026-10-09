@@ -59,7 +59,7 @@ commit_history(session, run.verdicts, failed, run_id, dry_run=dry_run, target_co
 | `area_types` | 필수 | `dict[complex_no, list[AreaType]]` | |
 | `area_summaries` | 필수 | `dict[(complex_no, area_key), dict]` | `rules.area_summary` 결과를 그대로 넣는다. 키 쌍의 area_key는 AreaType.area_key와 같은 float |
 | `gone` | 필수 | `list[dict]` | `classify_alerts`의 두 번째 반환값 |
-| `failures` | 필수 | `list[dict]` | `{"complex_no": str, "name": str?, "stage": str, "detail": str?, "area_key": float?}`. area_key가 없으면 단지 전체 실패, 있으면 그 평형만 실패. stage는 CollectorError.stage 값 |
+| `failures` | 필수 | `list[dict]` | `{"complex_no": str, "name": str?, "stage": str, "detail": str?, "area_key": float?}`. area_key가 있든 없든 그 단지 전체가 수집 실패로 표시된다 (area_key는 어느 평형에서 실패했는지 적는 데만 쓴다). stage는 CollectorError.stage 값 |
 | `prior_alerts` | PRICE_DROP이 있으면 필수 | `dict[dedup_key, dict]` | `prior_alerts()` 결과. 없으면 KeyError |
 | `molit_candidates` | 선택 | `dict[complex_no, list[dict]]` | `find_apt_seq_candidates` 결과. 키는 §10에 고정된 `apt_seq`(필수), `apt_nm`, `umd_nm`, `jibun`, `trade_count`, `last_contract`만 쓴다. `score`·`hints`는 표시하지 않는다 |
 | `trades` | 선택 | `dict[(complex_no, area_key), list[Trade]]` | 저층 실거래를 참고로 표시할 때 쓴다 (§4.1). 해제 거래를 빼고 가장 최근 1건을 보여 준다 |
@@ -98,8 +98,8 @@ commit_history(session, run.verdicts, failed, run_id, dry_run=dry_run, target_co
 
 ## 가정
 
-1. 단지 단위 실패만 이력 보호 대상이다. 평형 하나만 실패해도 pipeline이 그 단지를 `failed_complex_nos`에 넣어야 그 단지의 이력이 보호된다. 리포트에서는 `failures`의 `area_key`로 평형 단위 실패도 표시할 수 있다.
-2. 실패 단지에 Verdict가 일부 들어와도 분류(표시)는 하지만 이력은 만들지도 바꾸지도 않는다 (`SKIPPED_FAILED`).
+1. (확정, CLAUDE.md §9 "실패 단위") 수집 실패의 단위는 단지다. pipeline은 평형 하나라도 실패한 단지를 `failed_complex_nos`에 넣고, 그 단지의 Verdict는 넘기지 않는다. 리포트는 방어적으로 처리한다. `failures` 항목이 하나라도 있는 단지는 다음 경우에도 단지 전체를 "수집 실패"로 표시한다: `area_key`가 AreaType과 맞지 않을 때, Complex·AreaType이 없을 때. 표시할 때는 이름(없으면 `단지 {complex_no}`)을 쓰고, 평형 정보가 있으면 `전용 n㎡`로 같이 적는다. 실패 항목이 있는 단지에는 "조사 대상 평형이 없습니다"를 쓰지 않는다. summary의 `## 수집 실패`에는 실패 항목마다 "단지 [평형]: 수집 실패 — 원인" 한 줄을 쓴다.
+2. 그래도 실패 단지의 Verdict가 들어오면, 표시용 분류는 하지만 이력은 만들지도 바꾸지도 않는다 (`SKIPPED_FAILED`). 정상 흐름에서는 생기지 않는다.
 3. 같은 dedup_key의 Verdict가 두 번 들어오면 ValueError를 낸다. 대표 매물만 와야 하기 때문이다.
 4. "내려간 매물"의 `reason`은 두 가지다. `GONE`은 이번 수집에 매물이 없는 경우이고, `NOT_BARGAIN`은 매물은 있지만 급매 조건을 벗어난 경우다. GONE이면 동·층을 알 수 없어서 dedup_key를 작게 표시한다.
 5. 신규·가격 인하 목록은 신규를 먼저 두고, 그 안에서는 discount_pct가 큰 순서로 정렬한다. judge 반환 순서에는 의존하지 않는다.

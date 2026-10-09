@@ -437,8 +437,41 @@ def zero_target_areas():
     marker = ("대상 평형 없음" in s) or ("대상 평형" in s and "없" in s)
     check("대상 평형 0개 단지: summary에 '대상 평형 없음' 구분 표시", marker, s)
     check("대상 평형 0개 단지: 리포트에 '대상 평형 없음' 구분 표시",
-          ("대상 평형 없음" in r) or ("36평" in r and "단지222" in r and "없" in r), "")
+          ("대상 평형 없음" in r) or ("조사 대상 평형" in r and "없습니다" in r), "")
     check("대상 평형 0개 단지: status OK로 보고되지 않음 또는 별도 표시", rc != 0 or marker, f"rc={rc}")
+
+
+@scenario
+def failure_unit_area():
+    """평형 하나(두 번째 area_key)의 판정이 실패하면 단지 전체 실패, 그 단지 Verdict는 넘기지 않음."""
+    from app.domain import rules
+    h = Harness().install()
+    A2 = 59.97
+    h.area_types["222"] = [AreaType("222", AREA, AREA, 112.4, 34, "112A"), AreaType("222", A2, A2, 80.0, 24, "80A")]
+    l2 = Listing("222-9", "222", A2, "109동", "9/20", "NORMAL", "남향", 50000, None, 1, [],
+                 f"222|{A2}|109동|9/20|남향", "https://example.invalid/222/9")
+    h.listings["222"] = [L("222", 1, 80000), L("222", 2, 99000), l2]
+    real_judge = rules.judge
+    def judge(ls, ts, as_of):
+        if ls and ls[0].complex_no == "222" and ls[0].area_key == A2:
+            raise ValueError("area fail")
+        return real_judge(ls, ts, as_of)
+    rules.judge = judge
+    try:
+        rc = h.run()
+    finally:
+        rules.judge = real_judge
+    a, k = h.spy["classify"][0]
+    verdicts = a[1]
+    failed = a[2]
+    check("실패단위: 평형 하나 실패 -> 단지 222 failed_complex_nos", "222" in set(failed), str(failed))
+    check("실패단위: 실패 단지 Verdict classify에 미전달", all(v.listing.complex_no != "222" for v in verdicts),
+          str([v.listing.dedup_key for v in verdicts]))
+    r = h.report()
+    check("실패단위: 리포트에 실패 단지 매물(222-1 url) 없음", "example.invalid/222/" not in r)
+    check("실패단위: 종료코드 1, 단지222 수집 실패 표시", rc == 1 and "단지222" in h.summary(), f"rc={rc}")
+    vr = h.db("select count(*) from verdicts where dedup_key like '222|%'")
+    check("실패단위: 실패 단지 verdict 스냅샷 없음", vr == [(0,)], str(vr))
 
 
 def main():
@@ -446,7 +479,7 @@ def main():
     for sc in [c73_one_complex_raises, c73_all_fail, molit_failure_fails_complex, c74_tz_utc, c75_lock,
                c75_concurrent_processes, blocked_stops_naver, blocked_real_client_http_count,
                dry_run_history_untouched, no_molit_key, collector_warnings_passed, listing_drop,
-               target_prior_commit_order, zero_target_areas]:
+               target_prior_commit_order, zero_target_areas, failure_unit_area]:
         os.environ.clear(); os.environ.update(base_env)
         sc()
     fails = [r for r in RESULTS if not r[1]]

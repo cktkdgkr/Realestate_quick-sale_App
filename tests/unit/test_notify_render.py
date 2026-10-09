@@ -328,3 +328,52 @@ def test_collector_warnings_shown(sample):
     html = render_report(run, ctx)
     assert "수집 경고" in html and "평형을 찾지 못한 매물 1건" in html
     assert "수집 경고 1건" in render_summary(run, ctx)
+
+
+# ---------------------------------------------------------------- 실패 단위 = 단지 (CLAUDE.md §9 "명세 확정(실패 단위)")
+
+def _before_result(text: str) -> str:
+    return text.split("## 실행 결과")[0]
+
+
+def test_area_failure_unmatched_area_key_shown_by_name(sample):
+    """반려 재현 1: AreaType(84.97)과 맞지 않는 area_key(84.9) 실패도 단지·평형 이름과 함께 수집 실패."""
+    run, ctx, _ = sample
+    cx = [S.Complex("C1", "단지1", "11710", "주소", 20, "x")]
+    ats = {"C1": [S.AreaType("C1", 84.97, 84.97, 112.0, 34, "112")]}
+    run = RunResult("r", run.started_at, "PARTIAL", [], ["x"], [])
+    c = dict(complexes=cx, area_types=ats, area_summaries={}, gone=[], prior_alerts={},
+             failures=[{"complex_no": "C1", "stage": "network", "area_key": 84.9}])
+    top = _before_result(render_summary(run, c))
+    assert "- 단지1 전용 84.9㎡: 수집 실패 — 네트워크 오류." in top
+    assert "일부 수집 오류" not in top
+    html = render_report(run, c)
+    assert "단지1" in html and "전용 84.9㎡ — 네트워크 오류" in html
+    assert "조사 대상 평형(공급 119.0㎡ 이하)이 없습니다" not in html
+
+
+def test_area_failure_without_complex_or_area_types(sample):
+    """반려 재현 2: Complex·AreaType이 없는 단지의 평형 실패."""
+    run, _, _ = sample
+    run = RunResult("r", run.started_at, "PARTIAL", [], [], [])
+    c = dict(complexes=[], area_types={}, area_summaries={}, gone=[],
+             failures=[{"complex_no": "C5", "name": "단지5", "stage": "network", "area_key": 59.9}])
+    text = render_summary(run, c)
+    assert text.splitlines()[0].startswith("[수집 실패 있음]") and "수집 실패 1단지" in text.splitlines()[0]
+    assert "- 단지5 전용 59.9㎡: 수집 실패 — 네트워크 오류." in _before_result(text)
+    html = render_report(run, c)
+    assert "조사 대상 평형(공급 119.0㎡ 이하)이 없습니다" not in html
+    # 요약 박스 배너와 현황표 양쪽에 단지 이름과 수집 실패
+    assert html.index("단지5") < html.index("실행 상태")
+    status = html[html.index("<!-- 5. 단지·평형별 현황 -->"):]
+    assert "단지5" in status and "<strong>수집 실패</strong> — 전용 59.9㎡ — 네트워크 오류" in status
+
+
+def test_area_failure_marks_whole_complex_failed(sample):
+    """평형 하나가 실패해도 단지 전체가 수집 실패로 집계된다."""
+    run, ctx, _ = sample
+    c = dict(ctx, failures=[{"complex_no": S.DONGA, "stage": "schema_changed", "area_key": 84.69}])
+    line = render_summary(run, c).splitlines()[0]
+    assert "수집 실패 1단지" in line
+    html = render_report(run, c)
+    assert "<strong>수집 실패</strong> — 32평 105 (전용 84.69㎡) — 네이버 응답 형식 변경 의심" in html

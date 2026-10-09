@@ -156,6 +156,15 @@ def _counts(verdicts: list[Verdict]) -> dict[str, int]:
     return c
 
 
+def _failure_text(f: Mapping, at_by_key: Mapping) -> str:
+    """실패 항목 한 줄: [평형: ]원인[: 상세]. 평형이 AreaType과 맞지 않아도 area_key로 적는다."""
+    text = stage_label(f.get("stage")) + (f": {redact(f['detail'])}" if f.get("detail") else "")
+    ak = f.get("area_key")
+    if ak is not None:
+        text = f"{_area_label(at_by_key.get((str(f['complex_no']), ak)), ak)} — {text}"
+    return text
+
+
 def build_title(run: RunResult, context: Mapping) -> str:
     """리포트 <title>과 summary.md 첫 줄 (notify 스킬 §4 이메일 제목 형식을 옮김)."""
     d = date_label(run_date(run))
@@ -285,7 +294,8 @@ def build_view(run: RunResult, context: Mapping) -> dict:
     for cno in order:
         cx = cx_by_no.get(cno)
         cx_failures = [f for f in failures if str(f["complex_no"]) == cno]
-        whole_fail = [f for f in cx_failures if f.get("area_key") is None]
+        # CLAUDE.md §9 (실패 단위): 실패 항목이 하나라도 있으면 단지 전체가 수집 실패다.
+        # area_key가 AreaType과 맞지 않거나 Complex가 없어도 이름과 함께 "수집 실패"로 표시한다.
         area_fail = {f["area_key"]: f for f in cx_failures if f.get("area_key") is not None}
         areas = []
         for at in sorted(area_types.get(cno, []), key=lambda a: a.area_key):
@@ -329,11 +339,16 @@ def build_view(run: RunResult, context: Mapping) -> dict:
             "complex_no": cno,
             "name": cx_name(cno),
             "address": cx.address if cx else "",
-            "failed": bool(whole_fail),
-            "failure_text": "; ".join(
-                stage_label(f.get("stage")) + (f": {redact(f['detail'])}" if f.get("detail") else "")
-                for f in whole_fail
-            ),
+            "failed": bool(cx_failures),
+            "failure_text": "; ".join(_failure_text(f, at_by_key) for f in cx_failures),
+            "failure_items": [
+                {
+                    "area_label": _area_label(at_by_key.get((cno, f["area_key"])), f["area_key"])
+                    if f.get("area_key") is not None else None,
+                    "text": stage_label(f.get("stage")) + (f": {redact(f['detail'])}" if f.get("detail") else ""),
+                }
+                for f in cx_failures
+            ],
             "molit_missing": cx is not None and not cx.molit_apt_seq,
             "candidates": cands,
             "areas": areas,
@@ -354,7 +369,6 @@ def build_view(run: RunResult, context: Mapping) -> dict:
     unknown_total = sum(a["unknown_count"] for r in status_rows for a in r["areas"])
     molit_missing = [r for r in status_rows if r["molit_missing"]]
     failed_rows = [r for r in status_rows if r["failed"]]
-    area_fail_rows = [(r, a) for r in status_rows for a in r["areas"] if a["failed"]]
 
     return {
         "title": build_title(run, context),
@@ -370,7 +384,6 @@ def build_view(run: RunResult, context: Mapping) -> dict:
         "gone": gone,
         "status_rows": status_rows,
         "failed_rows": failed_rows,
-        "area_fail_rows": area_fail_rows,
         "has_failure": bool(failed) or run.status != "OK",
         "no_trade_areas": no_trade_areas,
         "unknown_total": unknown_total,
