@@ -87,6 +87,7 @@ commit_history(session, run.verdicts, failed, run_id, dry_run=dry_run, target_co
 - 가격은 `normalize.format_price`로 표시한다. §7 문구 안의 기준가만 `{base:,}만원` 형식이다.
 - 오류·경고 문자열에 있는 `serviceKey`/`api_key`/`token`/`password` 파라미터 값은 `***`로 가린다.
 - HTML은 Jinja2 autoescape를 쓴다.
+- (2026-10-09 디자인 변경, 템플릿만) 연회색 바탕 + 흰 둥근 카드, 포인트 초록 #03C75A, 급매·하락 빨강 #F04452, 요약 숫자 타일 4개(신규·가격 인하·지속 중·수집 실패 단지), 매물 카드 칩(신규/가격 인하/지속 중/실거래 근거/매물 근거/저층, reasons 문구와 floor_label에서 템플릿이 판단), 현황표는 얇은 구분선만 사용. 데이터·문구·섹션 순서·Python 로직은 그대로다.
 
 ## alert_history 열 의미 확인 (web-infra 가정 3)
 
