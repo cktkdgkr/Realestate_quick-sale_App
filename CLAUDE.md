@@ -219,6 +219,11 @@ render_report(run: RunResult, context: dict) -> str  # 단일 HTML (인라인 �
 render_summary(run: RunResult, context: dict) -> str # out/summary.md 내용. 첫 줄 = 상태·신규/인하 건수·수집 실패 여부
     # context에는 단지별 Complex, AreaType, area_summary, 내려간 매물, 실패 단지 목록 등이 들어간다. 키 이름은 notifier가 정하고 handoff에 적는다
 
+# §10 공식 보조 인터페이스 (pipeline이 써도 되는 것)
+# NaverClient.warnings: list[str] / MolitClient.drain_warnings() -> list[str] / MolitClient.close()
+# naver_trades.fetch_naver_trades_or_warning(client, complex, area_types) -> tuple[list[Trade] | None, list[str]]
+# report.write_outputs(...) -> 리포트·요약을 모두 렌더링한 뒤 원자적으로 쓴다
+
 # app/pipeline.py  (소유: web-infra, Orchestrator 공동)
 main(argv) -> int     # python -m app.pipeline --once [--dry-run]. 종료 코드: OK=0, PARTIAL=1, FAILED=2
 ```
@@ -258,4 +263,5 @@ main(argv) -> int     # python -m app.pipeline --once [--dry-run]. 종료 코드
 | 2026-10-08 | 명세 확정(실거래): ① 교차검증에서 국토부에만 있는 거래는 기간과 상관없이 [INFO]로 둔다. [WARN]은 "네이버에만 있음"과 "가격 불일치"에만 쓴다. ② 국토부 resultCode "03"(NO_DATA)은 4단계 실제 응답을 확인할 때까지 지금처럼 오류로 처리한다. ③ 네이버 실거래의 지하층 표기("B1", "지하1")는 음의 정수(-1)로 바꿔 짝짓는다. ④ 네이버 실거래 항목에 필수 필드(tradeType 포함)가 없으면 schema_changed를 낸다. 교차검증 실패는 판정을 막지 않고 경고로만 남는다. ⑤ "36평 초과 거래 판별"을 max(area_key)+0.5로 근사하는 방식이 맞는지는 4단계 C8에서 확인한다 | 실거래 모듈 검증 모호점 해소 |
 | 2026-10-08 | 명세 확정(pipeline): ① 국토부 실거래 수집이 실패하면 그 단지 전체를 수집 실패로 처리한다(실거래 조건 없이 판정하지 않는다). ② molit_apt_seq가 없는 단지는 매물 기준으로만 판정하고 리포트에 후보를 표시한다. 이 경우는 실패가 아니다. ③ MOLIT_API_KEY가 없으면 매물 기준으로만 판정하고 status=PARTIAL로 한다. 이 실행에서는 모든 단지를 이력 보호 대상으로 둔다. ④ yaml의 molit_apt_seq가 다른 값보다 우선한다. ⑤ FAILED 실행의 리포트도 reports 브랜치에 남긴다. ⑥ "키 없음" 표시는 지금처럼 pipeline이 후처리한다(notifier로 옮기는 것은 나중 과제) | web-infra 2단계 정책 확정 |
 | 2026-10-08 | 명세 확정(실패 단위): 수집 실패의 단위는 **단지**다. 평형 하나라도 실패하면 그 단지 전체를 실패로 보고 `failed_complex_nos`에 넣는다. pipeline은 실패 단지의 Verdict를 리포트와 이력에 넘기지 않는다. 그 단지는 "수집 실패"로만 표시한다(부분 결과로 NEW가 반복되는 문제를 막음). notify는 방어적으로 처리한다. failures 항목의 area_key가 AreaType과 맞지 않거나 Complex가 없어도, 그 단지를 이름과 함께 "수집 실패"로 표시해야 하고 "조사 대상 평형 없음"으로 보이면 안 된다 | notify 검증 모호점 1·2와 반려 사유 해소 |
+| 2026-10-09 | 명세 확정: ① 대상 평형(공급 119.0㎡ 이하)이 0개인 단지는 실패가 아니다(status 그대로). 대신 리포트와 summary의 "확인 필요"에 "대상 평형 없음: 단지명(번호)"를 표시한다. "급매 없음"과 같아 보이면 안 된다. ② §10에 공식 보조 인터페이스(warnings, drain_warnings, close, fetch_naver_trades_or_warning, write_outputs)를 추가한다 | pipeline 검증 모호점 해소 |
 | 2026-10-08 | 통합 리허설 단지 확정: 잠원동아(complex_no 3009), 잠실엘스(complex_no 22627) | 사용자 답변 |
