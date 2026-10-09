@@ -88,6 +88,7 @@ commit_history(session, run.verdicts, failed, run_id, dry_run=dry_run, target_co
 - 오류·경고 문자열에 있는 `serviceKey`/`api_key`/`token`/`password` 파라미터 값은 `***`로 가린다.
 - HTML은 Jinja2 autoescape를 쓴다.
 - (2026-10-09 디자인 변경, 템플릿만) 연회색 바탕 + 흰 둥근 카드, 포인트 초록 #03C75A, 급매·하락 빨강 #F04452, 요약 숫자 타일 4개(신규·가격 인하·지속 중·수집 실패 단지), 매물 카드 칩(신규/가격 인하/지속 중/실거래 근거/매물 근거/저층, reasons 문구와 floor_label에서 템플릿이 판단), 현황표는 얇은 구분선만 사용. 모바일(360~420px)에서 가로 스크롤이 없도록 표에 width:100%·table-layout:fixed, 긴 텍스트에 overflow-wrap:anywhere·word-break:break-all, 현황표 글자 11~12px. 데이터·문구·섹션 순서·Python 로직은 그대로다.
+- (2026-10-09 디자인 재변경, 템플릿만) 한옥위크 톤으로 교체: 아이보리 바탕 #F3F1EC, 글자 #161514/#5A5753, 포인트 청록 #1C9A93·보조 보라 #6A4FBF·주홍 #E8412C, 섹션마다 장식용 영문 아이브로우(THIS WEEK 등), 큰 날짜 헤더, 요약은 어두운 정보 블록(#161616, 둥근 행 + 숫자 타일 4개), 카드 #FBFAF7·테두리 #E4E0D8·모서리 14px, 수집 실패 = 주홍 배너, 확인 필요 = 황토 배너, 실거래 매칭 확인 필요 = 보라 상자. 모바일 처리(width:100%·table-layout:fixed·overflow-wrap)는 유지.
 
 ## alert_history 열 의미 확인 (web-infra 가정 3)
 
