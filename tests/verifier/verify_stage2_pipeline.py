@@ -428,17 +428,38 @@ def target_prior_commit_order():
 
 @scenario
 def zero_target_areas():
+    """§9 2026-10-09 ①: 대상 평형 0개 단지는 실패 아님(status 그대로), 확인 필요에 '대상 평형 없음: 단지명(번호)'."""
     h = Harness().install()
     h.area_types["222"] = []
     h.listings["222"] = []
     rc = h.run()
     s, r = h.summary(), h.report()
-    print("----- summary (대상 평형 0개) -----\n" + s + "-----")
-    marker = ("대상 평형 없음" in s) or ("대상 평형" in s and "없" in s)
-    check("대상 평형 0개 단지: summary에 '대상 평형 없음' 구분 표시", marker, s)
-    check("대상 평형 0개 단지: 리포트에 '대상 평형 없음' 구분 표시",
-          ("대상 평형 없음" in r) or ("조사 대상 평형" in r and "없습니다" in r), "")
-    check("대상 평형 0개 단지: status OK로 보고되지 않음 또는 별도 표시", rc != 0 or marker, f"rc={rc}")
+    chk = s.split("## 확인 필요", 1)[1] if "## 확인 필요" in s else ""
+    check("대상 평형 0개: status 그대로 OK(rc=0)", rc == 0 and h.db("select status from runs") == [("OK",)], f"rc={rc}")
+    check("대상 평형 0개: summary 확인 필요에 '대상 평형 없음: 단지222(222)'", "대상 평형 없음: 단지222(222)" in chk, s)
+    check("대상 평형 0개: summary 첫 줄에 수집 실패 표시 없음(실패 아님)", "수집 실패 없음" in s.splitlines()[0] or
+          "수집 실패" not in s.splitlines()[0], s.splitlines()[0])
+    # 리포트에는 '확인 필요' 제목이 따로 없고, 상단 요약 상자(실거래 매칭 확인 필요·실거래 부족·층 미상과 같은 곳)에 나온다
+    i = r.find("대상 평형 없음: 단지222(222)")
+    check("대상 평형 0개: 리포트 상단 요약(확인 항목 상자)에 '대상 평형 없음: 단지222(222)'",
+          i >= 0 and i < r.find("이번 주 알림"), "")
+    # 수집 실패 단지는 '수집 실패'로만 (대상 평형 없음으로 보이면 안 됨)
+    for stage in ("fetch_complex", "fetch_listings"):
+        h2 = Harness().install()
+        h2.fail[(stage, "222")] = CollectorError("network", "boom", "222")
+        rc2 = h2.run()
+        s2, r2 = h2.summary(), h2.report()
+        check(f"실패 단지({stage}): '대상 평형 없음' 표시 없음, '수집 실패' 표시",
+              rc2 == 1 and "대상 평형 없음" not in s2 and "대상 평형 없음" not in r2
+              and "평형(공급 119.0㎡ 이하)이 없습니다" not in r2 and "단지222" in s2 and "수집 실패" in s2, s2)
+    # 대상 평형 0개 + 다른 단지 실패 동시
+    h3 = Harness().install()
+    h3.area_types["222"] = []; h3.listings["222"] = []
+    h3.fail[("fetch_listings", "333")] = CollectorError("network", "boom", "333")
+    rc3 = h3.run(); s3 = h3.summary()
+    check("대상 평형 0개 + 다른 단지 실패: PARTIAL, 222는 대상 평형 없음, 333은 수집 실패",
+          rc3 == 1 and "대상 평형 없음: 단지222(222)" in s3 and "대상 평형 없음: 단지333" not in s3
+          and "단지333(333): 수집 실패" in s3, s3)
 
 
 @scenario
